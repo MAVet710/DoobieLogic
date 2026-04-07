@@ -6,6 +6,8 @@ from doobielogic.regulations import REGULATION_LINKS
 
 st.set_page_config(page_title="DoobieLogic", page_icon="🌿", layout="wide")
 
+
+
 # Init
 if "copilot" not in st.session_state:
     st.session_state.copilot = DoobieCopilot()
