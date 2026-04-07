@@ -6,16 +6,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from .community import CommunityAnswer, CommunityStore, VerificationReport, new_answer_id, now_iso
 from .dashboard import BuyerWorkspaceStore
 from .engine import CannabisLogicEngine
 from .models import CannabisInput, CannabisOutput
 from .normalizer import normalize_sales_rows_to_input
 from .regulations import REGULATION_LINKS
 from .sales_api import CannabisSalesAPIClient
-from .verification import verify_sources
 
-app = FastAPI(title="DoobieLogic", version="0.3.0")
+app = FastAPI(title="DoobieLogic", version="0.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,7 +25,6 @@ app.add_middleware(
 engine = CannabisLogicEngine()
 sales_client = CannabisSalesAPIClient()
 store = BuyerWorkspaceStore()
-community_store = CommunityStore()
 
 
 class SalesIngestRequest(BaseModel):
@@ -45,20 +42,6 @@ class DashboardSyncRequest(BaseModel):
 class DashboardAnalyzeRequest(BaseModel):
     buyer_id: str = Field(min_length=1)
     payload: CannabisInput
-
-
-class CommunityQuestionCreateRequest(BaseModel):
-    asked_by: str = Field(min_length=1)
-    role: str = Field(pattern="^(buyer|operator|compliance|analyst|other)$")
-    state: str = Field(min_length=2, max_length=2)
-    question_text: str = Field(min_length=10)
-    tags: list[str] = Field(default_factory=list)
-
-
-class CommunityAnswerCreateRequest(BaseModel):
-    responder_role: str = Field(pattern="^(buyer|operator|compliance|analyst|other)$")
-    answer_text: str = Field(min_length=20)
-    sources: list[str] = Field(default_factory=list)
 
 
 @app.get("/health")
@@ -166,62 +149,3 @@ def dashboard_recommendations(buyer_id: str):
 @app.get("/dashboard/buyers")
 def dashboard_buyers() -> dict[str, list[str]]:
     return {"buyers": store.list_buyers()}
-
-
-@app.post("/community/questions")
-def create_community_question(req: CommunityQuestionCreateRequest):
-    if req.state.upper() not in REGULATION_LINKS:
-        raise HTTPException(status_code=400, detail=f"Unsupported state code: {req.state.upper()}")
-    question = community_store.create_question(req.asked_by, req.role, req.state, req.question_text, req.tags)
-    return question
-
-
-@app.get("/community/questions")
-def list_community_questions(state: str | None = None, tag: str | None = None):
-    return community_store.list_questions(state=state, tag=tag)
-
-
-@app.get("/community/questions/{question_id}")
-def get_community_question(question_id: str):
-    question = community_store.get_question(question_id)
-    if not question:
-        raise HTTPException(status_code=404, detail="Question not found")
-    return question
-
-
-@app.post("/community/questions/{question_id}/answers")
-def add_community_answer(question_id: str, req: CommunityAnswerCreateRequest):
-    verified, trusted, untrusted = verify_sources(req.sources)
-
-    if not verified:
-        raise HTTPException(
-            status_code=400,
-            detail="Answer rejected: include at least one trusted verification source (.gov/.edu or approved cannabis regulator domain).",
-        )
-
-    report = VerificationReport(
-        verified=verified,
-        trusted_sources=trusted,
-        untrusted_sources=untrusted,
-        checked_at=now_iso(),
-        notes="Automated source-domain verification passed. Use human compliance review for policy-critical answers.",
-    )
-    answer = CommunityAnswer(
-        answer_id=new_answer_id(),
-        responder_role=req.responder_role,
-        answer_text=req.answer_text,
-        sources=req.sources,
-        verification=report,
-        created_at=now_iso(),
-    )
-
-    updated = community_store.add_answer(question_id, answer)
-    if not updated:
-        raise HTTPException(status_code=404, detail="Question not found")
-
-    return {
-        "question_id": question_id,
-        "answer_id": answer.answer_id,
-        "verification": report,
-        "answer": answer,
-    }

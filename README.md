@@ -1,68 +1,64 @@
 # DoobieLogic
 
-DoobieLogic is a standalone Cannabis AI logic service designed to run now on **Streamlit Community Cloud via GitHub** while keeping API-ready architecture.
+DoobieLogic is a standalone Cannabis AI logic service that:
 
-## What this includes
+1. Ingests cannabis sales data from an external API.
+2. Normalizes all AI input fields into a single schema.
+3. Applies a deterministic Cannabis AI decision engine (scoring + recommendations).
+4. Ships state regulation links as first-class data for compliance-aware outputs.
+5. Exposes buyer-dashboard-ready APIs so your frontend can consume KPI/risk/recommendation payloads directly.
 
-1. Cannabis AI scoring engine (market pressure, compliance risk, inventory stress).
-2. Sales data normalization pipeline.
-3. State regulation links for compliance-aware outputs.
-4. Buyer dashboard API endpoints (FastAPI).
-5. Community Q&A ingestion so buyers/cannabis professionals can teach the system.
-6. Automated source verification so answers must include trusted sources.
-7. A **Streamlit app UI** for immediate hosted usage with DoobieLogic brand colors.
+## Features
 
-## Streamlit hosting (recommended for now)
+- **Standalone API** built with FastAPI.
+- **Sales data integration client** (`CannabisSalesAPIClient`) with pagination support.
+- **AI logic engine** (`CannabisLogicEngine`) that mimics production-like cannabis logic.
+- **Dashboard integration endpoints** for sync + latest KPIs + recommendations.
+- **State regulation registry** for all US states + DC.
 
-Use `streamlit_app.py` as the app entrypoint in Streamlit Cloud.
-
-### Branding setup
-
-- Save your provided logo image as `assets/doobielogic_logo.png`.
-- The app auto-uses it in the browser tab icon and header.
-- Theme colors are configured in `.streamlit/config.toml` using logo-aligned green/gold palette.
-
-### Local run
+## Quick start
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-streamlit run streamlit_app.py
-```
-
-### Streamlit Cloud settings
-
-- **Repository:** this repo (`DoobieLogic`)
-- **Branch:** your deployment branch
-- **Main file path:** `streamlit_app.py`
-- **Python version:** 3.10+
-
-## FastAPI (optional, still available)
-
-```bash
+pip install -e .
 uvicorn doobielogic.api:app --reload
 ```
 
+## Core endpoints
+
+- `GET /health`
+- `GET /states`
+- `POST /analyze`
+- `POST /sales/ingest`
+
 ## Buyer dashboard endpoints
 
-- `POST /dashboard/{buyer_id}/sync`
-- `POST /dashboard/analyze/store`
-- `GET /dashboard/{buyer_id}/latest`
-- `GET /dashboard/{buyer_id}/kpis`
-- `GET /dashboard/{buyer_id}/recommendations`
-- `GET /dashboard/buyers`
+- `POST /dashboard/{buyer_id}/sync`  
+  Pulls sales rows from the sales API, normalizes into AI input, runs analysis, stores latest output.
+- `POST /dashboard/analyze/store`  
+  Allows your dashboard/backend to post already-assembled `CannabisInput` and persist analysis.
+- `GET /dashboard/{buyer_id}/latest`  
+  Returns latest full analysis object.
+- `GET /dashboard/{buyer_id}/kpis`  
+  Returns dashboard-ready KPI + risk block.
+- `GET /dashboard/{buyer_id}/recommendations`  
+  Returns recommendation list for UI cards.
+- `GET /dashboard/buyers`  
+  Lists buyer IDs currently cached in-memory.
 
-## Community Q&A endpoints
+## Environment variables
 
-- `POST /community/questions`
-- `GET /community/questions`
-- `GET /community/questions/{question_id}`
-- `POST /community/questions/{question_id}/answers`
+- `DOOBIE_SALES_API_BASE_URL` (default: `https://api.example.com`)
+- `DOOBIE_SALES_API_KEY` (optional)
+- `DOOBIE_HTTP_TIMEOUT` (seconds, default `20`)
 
-## Verification policy
+## Example dashboard sync request
 
-- Answers require at least one trusted URL source.
-- Trusted = `.gov`, `.edu`, or approved regulator domains.
-- Accepted answers include a verification report (trusted/untrusted source split and timestamp).
-- Human compliance review is still recommended for policy-critical answers.
+```json
+{
+  "state": "CA",
+  "start_date": "2026-01-01",
+  "end_date": "2026-01-31"
+}
+```
