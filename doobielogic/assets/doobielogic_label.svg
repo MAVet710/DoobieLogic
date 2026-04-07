@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="180" viewBox="0 0 600 180">
+  <rect width="600" height="180" fill="#F5F7F5" rx="16"/>
+  <circle cx="90" cy="90" r="54" fill="#D4A017" />
+  <circle cx="90" cy="90" r="36" fill="#F5F7F5" />
+  <text x="170" y="92" font-size="58" font-family="Verdana, Arial, sans-serif" fill="#0B5D2A" font-weight="700">DoobieLogic</text>
+  <text x="172" y="126" font-size="18" font-family="Verdana, Arial, sans-serif" fill="#0B5D2A">Cannabis AI Workspace</text>
+</svg>
