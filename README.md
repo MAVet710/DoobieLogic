@@ -1,64 +1,71 @@
 # DoobieLogic
 
-DoobieLogic is a standalone Cannabis AI logic service that:
+DoobieLogic is a cannabis-native copilot and API layer for buyers, operators, compliance teams, and extraction teams. It combines deterministic KPI logic, CSV intelligence, and curated source grounding so teams can move faster without pretending heuristics are law.
 
-1. Ingests cannabis sales data from an external API.
-2. Normalizes all AI input fields into a single schema.
-3. Applies a deterministic Cannabis AI decision engine (scoring + recommendations).
-4. Ships state regulation links as first-class data for compliance-aware outputs.
-5. Exposes buyer-dashboard-ready APIs so your frontend can consume KPI/risk/recommendation payloads directly.
+## What DoobieLogic includes
 
-## Features
+- **Streamlit copilot UI** (`streamlit_app.py`) with:
+  - role selector
+  - state selector
+  - chat history
+  - CSV upload + file intelligence
+  - buyer-brain quick actions
+- **Copilot orchestration** (`doobielogic/copilot.py`)
+- **Curated source grounding** (`doobielogic/sourcepack.py`)
+- **CSV parsing + mapping** (`doobielogic/parser.py`)
+- **Buyer brain heuristics** (`doobielogic/buyer_brain.py`)
+- **Deterministic KPI analysis engine** (`doobielogic/engine.py`)
+- **API endpoints for dashboard integrations** (`doobielogic/api.py`)
 
-- **Standalone API** built with FastAPI.
-- **Sales data integration client** (`CannabisSalesAPIClient`) with pagination support.
-- **AI logic engine** (`CannabisLogicEngine`) that mimics production-like cannabis logic.
-- **Dashboard integration endpoints** for sync + latest KPIs + recommendations.
-- **State regulation registry** for all US states + DC.
+## Grounded vs heuristic outputs
 
-## Quick start
+DoobieLogic explicitly separates output types:
+
+- **Grounded source context**: comes from curated source pack links and is labeled with:
+  - `grounding`
+  - `confidence`
+  - `sources`
+- **Heuristic file intelligence / buyer brain**: derived from uploaded CSV fields and clearly described as heuristic when rule-based or proxy-based (for example open-to-buy proxy logic).
+
+## CSV upload intelligence
+
+When you upload a CSV in the Streamlit app, DoobieLogic:
+
+1. Parses file bytes into a dataframe.
+2. Maps likely cannabis columns (`product`, `category`, `brand`, `price`, `quantity`, `revenue`, `inventory`).
+3. Generates structured file insights (price, velocity, revenue, category/brand mix).
+4. Runs buyer-brain heuristics:
+   - low-velocity detection
+   - markdown candidate flags
+   - brand/category concentration
+   - inventory pressure and open-to-buy style proxy observations
+5. Injects these insights into copilot answers when data is available.
+
+## Sample CSV
+
+A realistic demo file is included at:
+
+- `data/sample_inventory.csv`
+
+Use it to test upload flow, quick actions, and buyer-brain signals.
+
+## Local run
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
+streamlit run streamlit_app.py
+```
+
+## API run
+
+```bash
 uvicorn doobielogic.api:app --reload
 ```
 
-## Core endpoints
+## Tests
 
-- `GET /health`
-- `GET /states`
-- `POST /analyze`
-- `POST /sales/ingest`
-
-## Buyer dashboard endpoints
-
-- `POST /dashboard/{buyer_id}/sync`  
-  Pulls sales rows from the sales API, normalizes into AI input, runs analysis, stores latest output.
-- `POST /dashboard/analyze/store`  
-  Allows your dashboard/backend to post already-assembled `CannabisInput` and persist analysis.
-- `GET /dashboard/{buyer_id}/latest`  
-  Returns latest full analysis object.
-- `GET /dashboard/{buyer_id}/kpis`  
-  Returns dashboard-ready KPI + risk block.
-- `GET /dashboard/{buyer_id}/recommendations`  
-  Returns recommendation list for UI cards.
-- `GET /dashboard/buyers`  
-  Lists buyer IDs currently cached in-memory.
-
-## Environment variables
-
-- `DOOBIE_SALES_API_BASE_URL` (default: `https://api.example.com`)
-- `DOOBIE_SALES_API_KEY` (optional)
-- `DOOBIE_HTTP_TIMEOUT` (seconds, default `20`)
-
-## Example dashboard sync request
-
-```json
-{
-  "state": "CA",
-  "start_date": "2026-01-01",
-  "end_date": "2026-01-31"
-}
+```bash
+python -m pytest -q
 ```
