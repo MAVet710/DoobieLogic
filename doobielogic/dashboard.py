@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
-from doobielogic.models import CannabisInput, CannabisOutput
+from .models import CannabisInput, CannabisOutput
 
 
 @dataclass
