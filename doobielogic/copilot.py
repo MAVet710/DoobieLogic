@@ -5,6 +5,8 @@ from typing import Literal
 
 from doobielogic.engine import CannabisLogicEngine
 from doobielogic.models import CannabisInput, CannabisOutput
+from doobielogic.parser import analyze_mapped_data, render_insight_summary
+from doobielogic.buyer_brain import render_buyer_brain_summary, summarize_buyer_opportunities
 from doobielogic.sourcepack import build_grounded_summary
 
 Persona = Literal["buyer", "retail_ops", "compliance", "extraction", "executive"]
@@ -41,19 +43,57 @@ class DoobieCopilot:
         self.engine = engine or CannabisLogicEngine()
 
     def ask(self, question: str, persona: Persona = "buyer", state: str | None = None) -> CopilotResponse:
-        grounded = build_grounded_summary(question=question, state=state, module=MODULE_MAP[persona])
-        guidance = PERSONA_GUIDANCE[persona]
+        safe_persona = persona if persona in PERSONA_GUIDANCE else "buyer"
+        safe_state = state.upper() if isinstance(state, str) and state.strip() else None
+        grounded = build_grounded_summary(question=question, state=safe_state, module=MODULE_MAP[safe_persona])
+        guidance = PERSONA_GUIDANCE[safe_persona]
         answer_parts = [
             f"Role lens: {guidance}",
             grounded["answer"],
         ]
-        suggestions = self._suggestions_for(persona)
+        suggestions = self._suggestions_for(safe_persona)
         return CopilotResponse(
             answer="\n\n".join(answer_parts),
             grounding=grounded["grounding"],
             confidence=grounded["confidence"],
             sources=grounded.get("sources", []),
             suggestions=suggestions,
+        )
+
+
+    def ask_with_buyer_brain(
+        self,
+        question: str,
+        mapped_data: dict[str, list | tuple | object] | None,
+        persona: Persona = "buyer",
+        state: str | None = None,
+    ) -> CopilotResponse:
+        safe_persona = persona if persona in PERSONA_GUIDANCE else "buyer"
+        safe_state = state.upper() if isinstance(state, str) and state.strip() else None
+        grounded = build_grounded_summary(question=question, state=safe_state, module=MODULE_MAP[safe_persona])
+
+        data_insights = analyze_mapped_data(mapped_data or {}) if mapped_data else {}
+        data_summary = render_insight_summary(data_insights)
+
+        answer_sections = [
+            f"Role lens: {PERSONA_GUIDANCE[safe_persona]}",
+            "File intelligence:\n" + data_summary,
+        ]
+
+        if safe_persona == "buyer" and mapped_data:
+            buyer_results = summarize_buyer_opportunities(mapped_data)
+            answer_sections.append(render_buyer_brain_summary(buyer_results))
+        elif mapped_data:
+            answer_sections.append("Buyer-specific recommendations are limited for this role unless directly supported by uploaded file fields.")
+
+        answer_sections.append("Grounded source context:\n" + grounded["answer"])
+
+        return CopilotResponse(
+            answer="\n\n".join(answer_sections),
+            grounding=grounded["grounding"],
+            confidence=grounded["confidence"],
+            sources=grounded.get("sources", []),
+            suggestions=self._suggestions_for(safe_persona),
         )
 
     def analyze_and_explain(self, payload: CannabisInput, persona: Persona = "buyer") -> CopilotResponse:
