@@ -41,13 +41,15 @@ class DoobieCopilot:
         self.engine = engine or CannabisLogicEngine()
 
     def ask(self, question: str, persona: Persona = "buyer", state: str | None = None) -> CopilotResponse:
-        grounded = build_grounded_summary(question=question, state=state, module=MODULE_MAP[persona])
-        guidance = PERSONA_GUIDANCE[persona]
+        safe_persona = persona if persona in PERSONA_GUIDANCE else "buyer"
+        safe_state = state.upper() if isinstance(state, str) and state.strip() else None
+        grounded = build_grounded_summary(question=question, state=safe_state, module=MODULE_MAP[safe_persona])
+        guidance = PERSONA_GUIDANCE[safe_persona]
         answer_parts = [
             f"Role lens: {guidance}",
             grounded["answer"],
         ]
-        suggestions = self._suggestions_for(persona)
+        suggestions = self._suggestions_for(safe_persona)
         return CopilotResponse(
             answer="\n\n".join(answer_parts),
             grounding=grounded["grounding"],

@@ -45,26 +45,31 @@ if st.button("Ask DoobieLogic", type="primary") and prompt:
 
 # Display chat
 for item in reversed(st.session_state.chat_history):
-    res = item["res"]
+    res = item.get("res")
+    if res is None:
+        continue
 
     st.markdown("---")
     st.markdown(f"**You:** {item['q']}")
 
     st.markdown("### 🧠 Answer")
-    st.write(res.answer)
+    st.write(getattr(res, "answer", "No answer available."))
 
     st.markdown("### ⚠️ Confidence")
-    st.write(res.confidence.upper())
+    confidence = str(getattr(res, "confidence", "unknown")).upper()
+    st.write(confidence)
 
     st.markdown("### 🔍 Grounding")
-    st.write(res.grounding)
+    st.write(getattr(res, "grounding", "No grounding data available."))
 
-    if res.sources:
+    sources = getattr(res, "sources", []) or []
+    if sources:
         st.markdown("### 📚 Sources")
-        for s in res.sources:
+        for s in sources:
             st.write(f"- {s}")
 
-    if res.suggestions:
+    suggestions = getattr(res, "suggestions", []) or []
+    if suggestions:
         st.markdown("### ⚡ Next Moves")
-        for s in res.suggestions:
+        for s in suggestions:
             st.write(f"- {s}")
