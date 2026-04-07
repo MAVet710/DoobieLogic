@@ -54,12 +54,13 @@ class DoobieCopilot:
         safe_persona = persona if persona in PERSONA_GUIDANCE else "buyer"
         safe_state = state.upper() if isinstance(state, str) and state.strip() else None
         grounded = build_grounded_summary(question=question, state=safe_state, module=MODULE_MAP[safe_persona])
-        knowledge = search_department_knowledge(safe_persona if safe_persona != "buyer" else "retail_ops", question, limit=3)
+        guidance = PERSONA_GUIDANCE[safe_persona]
         answer_parts = [
             f"Role lens: {PERSONA_GUIDANCE[safe_persona]}",
             render_department_knowledge_summary(knowledge),
             "Grounded source context:\n" + grounded["answer"],
         ]
+        suggestions = self._suggestions_for(safe_persona)
         return CopilotResponse(
             answer="\n\n".join(answer_parts),
             grounding=grounded["grounding"],
@@ -103,6 +104,42 @@ class DoobieCopilot:
         elif mapped_data:
             answer_sections.append("Department-specific operational analysis is preferred for this persona; buyer-only claims are minimized.")
         answer_sections.append("Grounded source context:\n" + grounded["answer"])
+        return CopilotResponse(
+            answer="\n\n".join(answer_sections),
+            grounding=grounded["grounding"],
+            confidence=grounded["confidence"],
+            sources=grounded.get("sources", []),
+            suggestions=self._suggestions_for(safe_persona),
+        )
+
+
+    def ask_with_buyer_brain(
+        self,
+        question: str,
+        mapped_data: dict[str, list | tuple | object] | None,
+        persona: Persona = "buyer",
+        state: str | None = None,
+    ) -> CopilotResponse:
+        safe_persona = persona if persona in PERSONA_GUIDANCE else "buyer"
+        safe_state = state.upper() if isinstance(state, str) and state.strip() else None
+        grounded = build_grounded_summary(question=question, state=safe_state, module=MODULE_MAP[safe_persona])
+
+        data_insights = analyze_mapped_data(mapped_data or {}) if mapped_data else {}
+        data_summary = render_insight_summary(data_insights)
+
+        answer_sections = [
+            f"Role lens: {PERSONA_GUIDANCE[safe_persona]}",
+            "File intelligence:\n" + data_summary,
+        ]
+
+        if safe_persona == "buyer" and mapped_data:
+            buyer_results = summarize_buyer_opportunities(mapped_data)
+            answer_sections.append(render_buyer_brain_summary(buyer_results))
+        elif mapped_data:
+            answer_sections.append("Buyer-specific recommendations are limited for this role unless directly supported by uploaded file fields.")
+
+        answer_sections.append("Grounded source context:\n" + grounded["answer"])
+
         return CopilotResponse(
             answer="\n\n".join(answer_sections),
             grounding=grounded["grounding"],
