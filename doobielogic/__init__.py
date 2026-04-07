@@ -1,3 +1,5 @@
 """DoobieLogic package."""
 
-__all__: list[str] = []
+from .engine import CannabisLogicEngine
+
+__all__ = ["CannabisLogicEngine"]

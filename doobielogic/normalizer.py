@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from doobielogic.models import CannabisInput
+from .models import CannabisInput
 
 
 def normalize_sales_rows_to_input(state: str, start_date: date, end_date: date, rows: list[dict[str, Any]]) -> CannabisInput:
