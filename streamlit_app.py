@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
+
 import streamlit as st
 
-from doobielogic.assistant import CannabisOpsAssistant
-from doobielogic.branding import BRAND_GOLD, BRAND_GREEN, BRAND_NAME, preferred_logo_path
 from doobielogic.community import CommunityAnswer, CommunityStore, VerificationReport, new_answer_id, now_iso
 from doobielogic.engine import CannabisLogicEngine
 from doobielogic.models import CannabisInput
 from doobielogic.regulations import REGULATION_LINKS
 from doobielogic.verification import verify_sources
 
-LOGO_PATH = preferred_logo_path()
+BRAND_GREEN = "#0B5D2A"
+BRAND_GOLD = "#D4A017"
+LOGO_PATH = Path("assets/doobielogic_logo.png")
 
 page_icon = str(LOGO_PATH) if LOGO_PATH.exists() else "🌿"
 st.set_page_config(page_title="DoobieLogic", page_icon=page_icon, layout="wide")
@@ -51,11 +53,11 @@ if LOGO_PATH.exists():
     with c1:
         st.image(str(LOGO_PATH), width=170)
     with c2:
-        st.markdown(f'<div class="brand-chip">{BRAND_NAME}</div>', unsafe_allow_html=True)
+        st.markdown('<div class="brand-chip">DoobieLogic</div>', unsafe_allow_html=True)
         st.title("Cannabis AI Workspace")
         st.caption("Buyer KPI scoring + verified community intelligence.")
 else:
-    st.markdown(f'<div class="brand-chip">{BRAND_NAME}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="brand-chip">DoobieLogic</div>', unsafe_allow_html=True)
     st.title("🌿 Cannabis AI Workspace")
     st.caption("Add your provided logo file at `assets/doobielogic_logo.png` to enable full branded imagery.")
 
@@ -65,20 +67,11 @@ if "community_store" not in st.session_state:
     st.session_state.community_store = CommunityStore()
 if "latest_output" not in st.session_state:
     st.session_state.latest_output = None
-if "ops_assistant" not in st.session_state:
-    from doobielogic.knowledge import CannabisKnowledgeBase
-
-    st.session_state.ops_assistant = CannabisOpsAssistant(CannabisKnowledgeBase())
 
 engine: CannabisLogicEngine = st.session_state.engine
 community_store: CommunityStore = st.session_state.community_store
 
-analysis_tab, community_tab, knowledge_tab, chat_tab = st.tabs(["Buyer Analysis", "Community Q&A", "Knowledge Assistant", "Ops Copilot"])
-
-if LOGO_PATH.exists():
-    st.sidebar.image(str(LOGO_PATH), use_container_width=True)
-st.sidebar.markdown("### DoobieLogic Package")
-st.sidebar.caption("Parent package exports brand metadata + label image helpers.")
+analysis_tab, community_tab = st.tabs(["Buyer Analysis", "Community Q&A"])
 
 with analysis_tab:
     st.subheader("Buyer KPI Analysis")
@@ -225,57 +218,3 @@ with community_tab:
                     st.write(f"- {a.answer_text}")
                     st.caption(f"Sources: {', '.join(a.sources)}")
                     st.caption(f"Trusted: {', '.join(a.verification.trusted_sources)}")
-
-
-
-with knowledge_tab:
-    st.subheader("Ask Cannabis Questions")
-    st.caption("Answers are generated from the built-in cannabis knowledge database (terpenes, cannabinoids, strains, extraction, legal and consumption topics).")
-
-    question = st.text_area("Ask a cannabis question", placeholder="Example: What is the difference between rosin and BHO extraction?")
-    limit = st.slider("Max sources", 1, 10, 5)
-
-    if "knowledge_base" not in st.session_state:
-        from doobielogic.knowledge import CannabisKnowledgeBase
-
-        st.session_state.knowledge_base = CannabisKnowledgeBase()
-
-    if st.button("Get cannabis answer", key="ask_knowledge", type="primary") and question.strip():
-        result = st.session_state.knowledge_base.ask(question, limit)
-        st.markdown("#### Answer")
-        st.write(result["answer"])
-
-        if result["matches"]:
-            st.markdown("#### Supporting entries")
-            for m in result["matches"]:
-                st.write(f"- **{m['title']}** ({m['category']}) — {m['content']}")
-                st.caption(f"Source: {m['source_url']}")
-
-
-with chat_tab:
-    st.subheader("Cannabis Operations Copilot")
-    st.caption("Role-aware cannabis assistant for buyers, sales teams, cultivation, extraction, and operations.")
-
-    persona = st.selectbox("Persona", ["buyer", "sales", "cultivation", "extraction", "operations"], index=0)
-    user_q = st.text_area("Ask your operations question", placeholder="How should a buyer evaluate vendor scorecards for concentrates?")
-    topk = st.slider("Knowledge depth", 1, 10, 5, key="chat_topk")
-
-    if st.button("Ask Ops Copilot", type="primary", key="ask_ops") and user_q.strip():
-        resp = st.session_state.ops_assistant.chat(user_q, persona, topk)
-        st.markdown("#### Copilot answer")
-        st.write(resp.answer)
-        st.markdown("#### Suggested actions")
-        for a in resp.suggested_actions:
-            st.write(f"- {a}")
-        st.markdown("#### Citations")
-        for c in resp.citations:
-            st.caption(c)
-
-        with st.form("copilot_feedback"):
-            helpful = st.radio("Was this helpful?", ["Yes", "No"], horizontal=True)
-            submitted_fb = st.form_submit_button("Save feedback to learning log")
-            if submitted_fb:
-                from doobielogic.knowledge import CannabisKnowledgeBase
-
-                CannabisKnowledgeBase().learn_from_feedback(persona, user_q, resp.answer, helpful == "Yes")
-                st.success("Feedback saved.")

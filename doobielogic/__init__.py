@@ -1,14 +1,5 @@
-"""DoobieLogic package metadata and public exports."""
+"""DoobieLogic package."""
 
-from doobielogic.branding import BRAND_GOLD, BRAND_GREEN, BRAND_NAME, packaged_label_image, preferred_logo_path
+from .engine import CannabisLogicEngine
 
-__version__ = "0.1.1"
-
-__all__ = [
-    "__version__",
-    "BRAND_NAME",
-    "BRAND_GREEN",
-    "BRAND_GOLD",
-    "packaged_label_image",
-    "preferred_logo_path",
-]
+__all__ = ["CannabisLogicEngine"]

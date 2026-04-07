@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from doobielogic.models import CannabisInput, CannabisOutput
-from doobielogic.regulations import REGULATION_LINKS
+from .models import CannabisInput, CannabisOutput
+from .regulations import REGULATION_LINKS
 
 
 class CannabisLogicEngine:

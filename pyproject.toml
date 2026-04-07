@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "doobielogic"
-version = "0.1.1"
+version = "0.1.0"
 description = "Standalone Cannabis AI logic and sales API integration service"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,6 +22,3 @@ dev = [
 
 [tool.setuptools]
 packages = ["doobielogic"]
-
-[tool.setuptools.package-data]
-doobielogic = ["assets/*.svg", "assets/*.png", "assets/*.md"]
