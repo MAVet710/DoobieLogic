@@ -98,13 +98,7 @@ _ENTRIES: tuple[DepartmentKnowledgeEntry, ...] = (
 
 def get_department_knowledge(department: str) -> list[dict]:
     dept = (department or "").strip().lower()
-    out=[]
-    for entry in _ENTRIES:
-        if entry.department == dept:
-            item=asdict(entry)
-            item["keywords"]=list(item.get("keywords", []))
-            out.append(item)
-    return out
+    return [asdict(entry) for entry in _ENTRIES if entry.department == dept]
 
 
 def search_department_knowledge(department: str, question: str, limit: int = 5) -> list[dict]:

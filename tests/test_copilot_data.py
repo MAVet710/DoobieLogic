@@ -26,4 +26,4 @@ def test_ask_with_buyer_brain_non_buyer_stays_cautious():
     copilot = DoobieCopilot()
     mapped = {"quantity": [1, 2], "inventory": [10, 5]}
     res = copilot.ask_with_buyer_brain("ops check", mapped_data=mapped, persona="compliance", state="NY")
-    assert "Department-specific operational analysis is preferred" in res.answer
+    assert "Buyer-specific recommendations are limited" in res.answer
