@@ -100,27 +100,30 @@ if st.button("Ask DoobieLogic", type="primary"):
             st.error(f"Copilot error: {exc}")
 
 for item in reversed(st.session_state.chat_history):
-    res = item.get("res") or {}
+    res = item.get("res")
+    if res is None:
+        continue
 
     st.markdown("---")
     st.markdown(f"**You:** {item.get('q', '')}")
 
     st.markdown("### 🧠 Answer")
-    st.write(res.get("answer", "No answer available."))
+    st.write(getattr(res, "answer", "No answer available."))
 
     st.markdown("### ⚠️ Confidence")
-    st.write(str(res.get("confidence", "unknown")).upper())
+    confidence = str(getattr(res, "confidence", "unknown")).upper()
+    st.write(confidence)
 
     st.markdown("### 🔍 Grounding")
-    st.write(res.get("grounding", "No grounding data available."))
+    st.write(getattr(res, "grounding", "No grounding data available."))
 
-    sources = res.get("sources", []) or []
+    sources = getattr(res, "sources", []) or []
     if sources:
         st.markdown("### 📚 Sources")
         for s in sources:
             st.write(f"- {s}")
 
-    suggestions = res.get("suggestions", []) or []
+    suggestions = getattr(res, "suggestions", []) or []
     if suggestions:
         st.markdown("### ⚡ Next Moves")
         for s in suggestions:
