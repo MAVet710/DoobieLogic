@@ -1,20 +1,24 @@
 from __future__ import annotations
 
-from io import BytesIO
+import csv
+from io import StringIO
 from typing import Any
 
-import pandas as pd
 
-
-def load_csv_bytes(file_bytes: bytes) -> pd.DataFrame | None:
+def load_csv_bytes(file_bytes: bytes) -> list[dict[str, str]] | None:
     try:
-        return pd.read_csv(BytesIO(file_bytes))
+        text = file_bytes.decode("utf-8-sig")
+        reader = csv.DictReader(StringIO(text))
+        return [dict(row) for row in reader]
     except Exception:
         return None
 
 
-def basic_cannabis_mapping(df: pd.DataFrame) -> dict[str, pd.Series]:
-    columns = {str(c).strip().lower(): c for c in df.columns}
+def basic_cannabis_mapping(rows: list[dict[str, Any]]) -> dict[str, list[Any]]:
+    if not rows:
+        return {}
+
+    columns = {str(c).strip().lower(): c for c in rows[0].keys()}
     mapping = {
         "product": ["product", "item", "name", "product name", "sku name"],
         "category": ["category", "type", "product type", "class"],
@@ -25,47 +29,65 @@ def basic_cannabis_mapping(df: pd.DataFrame) -> dict[str, pd.Series]:
         "brand": ["brand", "vendor", "producer"],
     }
 
-    normalized: dict[str, pd.Series] = {}
+    normalized: dict[str, list[Any]] = {}
     for key, options in mapping.items():
         for opt in options:
             if opt in columns:
-                normalized[key] = df[columns[opt]]
+                source_col = columns[opt]
+                normalized[key] = [row.get(source_col) for row in rows]
                 break
     return normalized
 
 
-def analyze_mapped_data(mapped: dict[str, pd.Series]) -> dict[str, Any]:
+def _to_float(value: Any) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _value_counts(values: list[Any], limit: int = 5) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = str(value if value not in {None, ""} else "Unknown")
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items(), key=lambda item: item[1], reverse=True)[:limit])
+
+
+def analyze_mapped_data(mapped: dict[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {}
 
     if "quantity" in mapped:
-        qty = pd.to_numeric(mapped["quantity"], errors="coerce").fillna(0)
-        result["avg_quantity"] = round(float(qty.mean()), 2)
-        result["low_velocity_count"] = int((qty < qty.mean()).sum())
-        result["zero_quantity_count"] = int((qty <= 0).sum())
+        qty = [_to_float(v) or 0.0 for v in mapped["quantity"]]
+        avg_qty = (sum(qty) / len(qty)) if qty else 0.0
+        result["avg_quantity"] = round(avg_qty, 2)
+        result["low_velocity_count"] = sum(1 for v in qty if v < avg_qty)
+        result["zero_quantity_count"] = sum(1 for v in qty if v <= 0)
 
     if "price" in mapped:
-        price = pd.to_numeric(mapped["price"], errors="coerce").dropna()
-        if not price.empty:
-            result["avg_price"] = round(float(price.mean()), 2)
-            result["min_price"] = round(float(price.min()), 2)
-            result["max_price"] = round(float(price.max()), 2)
+        prices = [p for p in (_to_float(v) for v in mapped["price"]) if p is not None]
+        if prices:
+            result["avg_price"] = round(sum(prices) / len(prices), 2)
+            result["min_price"] = round(min(prices), 2)
+            result["max_price"] = round(max(prices), 2)
 
     if "revenue" in mapped:
-        revenue = pd.to_numeric(mapped["revenue"], errors="coerce").fillna(0)
-        result["total_revenue"] = round(float(revenue.sum()), 2)
+        revenue = [_to_float(v) or 0.0 for v in mapped["revenue"]]
+        result["total_revenue"] = round(sum(revenue), 2)
 
     if "inventory" in mapped:
-        inv = pd.to_numeric(mapped["inventory"], errors="coerce").fillna(0)
-        result["inventory_units"] = round(float(inv.sum()), 2)
-        result["high_inventory_count"] = int((inv > inv.mean()).sum()) if len(inv) else 0
+        inv = [_to_float(v) or 0.0 for v in mapped["inventory"]]
+        avg_inv = (sum(inv) / len(inv)) if inv else 0.0
+        result["inventory_units"] = round(sum(inv), 2)
+        result["high_inventory_count"] = sum(1 for v in inv if v > avg_inv)
 
     if "category" in mapped:
-        cat = mapped["category"].astype(str).fillna("Unknown")
-        result["top_categories"] = cat.value_counts().head(5).to_dict()
+        result["top_categories"] = _value_counts(list(mapped["category"]))
 
     if "brand" in mapped:
-        brand = mapped["brand"].astype(str).fillna("Unknown")
-        result["top_brands"] = brand.value_counts().head(5).to_dict()
+        result["top_brands"] = _value_counts(list(mapped["brand"]))
 
     return result
 
