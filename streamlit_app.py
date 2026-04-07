@@ -29,7 +29,7 @@ if "uploaded_file_name" not in st.session_state:
 copilot = st.session_state.copilot
 
 st.title("🌿 DoobieLogic Copilot")
-st.caption("Ask, analyze, verify, and act across cannabis operations.")
+st.caption("Department-aware cannabis operating copilot with curated learned knowledge and conservative grounded context.")
 
 st.sidebar.header("Workspace")
 persona = st.sidebar.selectbox("Role", ["buyer", "retail_ops", "compliance", "extraction", "executive"])
