@@ -1,77 +1,55 @@
 # DoobieLogic
 
-DoobieLogic is a cannabis operations copilot with **department-specific intelligence** for retail, cultivation, extraction, kitchen, packaging, compliance, and executive workflows.
+DoobieLogic is a cannabis-native copilot and API layer for buyers, operators, compliance teams, and extraction teams. It combines deterministic KPI logic, CSV intelligence, and curated source grounding so teams can move faster without pretending heuristics are law.
 
-## What is included now
+## What DoobieLogic includes
 
-- Streamlit copilot UI with role/state selection, file upload, department detection, and operations view.
-- Built-in curated department knowledge packs (usable before any upload).
-- Department-specific parsers and routing.
-- Department-specific heuristics and action plans.
-- Grounded source context from curated source pack.
-- Retail buyer-brain intelligence for retail-shaped files.
+- **Streamlit copilot UI** (`streamlit_app.py`) with:
+  - role selector
+  - state selector
+  - chat history
+  - CSV upload + file intelligence
+  - buyer-brain quick actions
+- **Copilot orchestration** (`doobielogic/copilot.py`)
+- **Curated source grounding** (`doobielogic/sourcepack.py`)
+- **CSV parsing + mapping** (`doobielogic/parser.py`)
+- **Buyer brain heuristics** (`doobielogic/buyer_brain.py`)
+- **Deterministic KPI analysis engine** (`doobielogic/engine.py`)
+- **API endpoints for dashboard integrations** (`doobielogic/api.py`)
 
-## Department-specific modules
+## Grounded vs heuristic outputs
 
-- Knowledge packs: `doobielogic/department_knowledge.py`
-- Router/parser: `doobielogic/department_router.py`, `doobielogic/department_parsers.py`
-- Operations engine: `doobielogic/operations_engine.py`
-- Ops logic:
-  - `doobielogic/cultivation_ops.py`
-  - `doobielogic/extraction_ops.py`
-  - `doobielogic/kitchen_ops.py`
-  - `doobielogic/packaging_ops.py`
-  - `doobielogic/compliance_ops.py`
-  - `doobielogic/retail_ops.py`
-- Department models:
-  - `doobielogic/cultivation_models.py`
-  - `doobielogic/extraction_models.py`
-  - `doobielogic/kitchen_models.py`
-  - `doobielogic/packaging_models.py`
-  - `doobielogic/compliance_models.py`
+DoobieLogic explicitly separates output types:
 
-## Built-in learned knowledge (before file upload)
-
-Each department ships with curated static entries (10+ per department) covering:
-- recurring risk patterns
-- practical operator watchouts
-- conservative action framing
-- grounded operational/regulatory themes
-
-No live web retrieval is required for this built-in layer.
-
-## Heuristic vs grounded separation
-
-- **Grounded source context**: curated source pack references with labels:
+- **Grounded source context**: comes from curated source pack links and is labeled with:
   - `grounding`
   - `confidence`
   - `sources`
-- **File-derived operational signals**: heuristic unless explicitly marked as grounded operational/regulatory theme.
-- **Compliance outputs** include an explicit notice that operational guidance is **not legal advice**.
+- **Heuristic file intelligence / buyer brain**: derived from uploaded CSV fields and clearly described as heuristic when rule-based or proxy-based (for example open-to-buy proxy logic).
 
-## File routing behavior
+## CSV upload intelligence
 
-On upload, the app:
-1. Reads CSV rows.
-2. Detects likely department from headers.
-3. Parses into department-specific structures.
-4. Routes to department ops module.
-5. Produces learned-knowledge summary + file-derived signals + action plan.
+When you upload a CSV in the Streamlit app, DoobieLogic:
 
-Retail-shaped data falls back to retail parser/buyer-brain flow.
+1. Parses file bytes into a dataframe.
+2. Maps likely cannabis columns (`product`, `category`, `brand`, `price`, `quantity`, `revenue`, `inventory`).
+3. Generates structured file insights (price, velocity, revenue, category/brand mix).
+4. Runs buyer-brain heuristics:
+   - low-velocity detection
+   - markdown candidate flags
+   - brand/category concentration
+   - inventory pressure and open-to-buy style proxy observations
+5. Injects these insights into copilot answers when data is available.
 
-## Sample datasets
+## Sample CSV
+
+A realistic demo file is included at:
 
 - `data/sample_inventory.csv`
-- `data/sample_cultivation_ops.csv`
-- `data/sample_extraction_ops.csv`
-- `data/sample_kitchen_ops.csv`
-- `data/sample_packaging_ops.csv`
-- `data/sample_compliance_ops.csv`
 
-These are seeded to trigger realistic signals (variance, downtime, delays, reconciliation issues, repeat issues, aging actions).
+Use it to test upload flow, quick actions, and buyer-brain signals.
 
-## Run locally
+## Local run
 
 ```bash
 python -m venv .venv
@@ -80,7 +58,7 @@ pip install -e .
 streamlit run streamlit_app.py
 ```
 
-## Run API
+## API run
 
 ```bash
 uvicorn doobielogic.api:app --reload
