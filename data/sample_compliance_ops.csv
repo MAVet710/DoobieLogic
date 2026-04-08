@@ -1,0 +1,24 @@
+issue_id,issue_type,department,severity,corrective_action_status,open_days,repeat_issue_flag,state,source_type,packaging_flag,tracking_flag,labeling_flag,testing_flag,transport_flag,training_gap_flag
+CP-001,tracking gap,extraction,medium,in_progress,22,True,CA,internal_audit,False,False,False,False,False,True
+CP-002,testing hold,kitchen,medium,in_progress,21,False,NY,internal_audit,False,False,False,False,False,False
+CP-003,manifest variance,packaging,medium,in_progress,43,False,CA,internal_audit,False,True,False,False,False,False
+CP-004,training lapse,retail_ops,medium,open,42,False,NY,internal_audit,True,False,False,False,False,True
+CP-005,label mismatch,cultivation,medium,in_progress,16,True,CA,internal_audit,False,False,True,False,False,True
+CP-006,tracking gap,extraction,high,in_progress,68,True,NY,internal_audit,False,True,False,True,False,False
+CP-007,testing hold,kitchen,medium,in_progress,40,False,CA,internal_audit,False,False,False,False,True,False
+CP-008,manifest variance,packaging,medium,open,19,False,NY,internal_audit,True,False,False,False,False,True
+CP-009,training lapse,retail_ops,medium,in_progress,29,False,CA,internal_audit,False,True,False,False,False,True
+CP-010,label mismatch,cultivation,medium,in_progress,21,True,NY,internal_audit,False,False,True,False,False,False
+CP-011,tracking gap,extraction,medium,in_progress,72,True,CA,internal_audit,False,False,False,False,False,False
+CP-012,testing hold,kitchen,high,open,7,False,NY,internal_audit,True,True,False,True,False,True
+CP-013,manifest variance,packaging,medium,in_progress,43,False,CA,internal_audit,False,False,False,False,False,True
+CP-014,training lapse,retail_ops,medium,in_progress,73,False,NY,internal_audit,False,False,False,False,True,False
+CP-015,label mismatch,cultivation,medium,in_progress,29,True,CA,internal_audit,False,True,True,False,False,False
+CP-016,tracking gap,extraction,medium,open,25,True,NY,internal_audit,True,False,False,False,False,True
+CP-017,testing hold,kitchen,medium,in_progress,41,False,CA,internal_audit,False,False,False,False,False,True
+CP-018,manifest variance,packaging,high,in_progress,58,False,NY,internal_audit,False,True,False,True,False,False
+CP-019,training lapse,retail_ops,medium,in_progress,71,False,CA,internal_audit,False,False,False,False,False,False
+CP-020,label mismatch,cultivation,medium,open,23,True,NY,internal_audit,True,False,True,False,False,True
+CP-021,tracking gap,extraction,medium,in_progress,9,True,CA,internal_audit,False,True,False,False,True,True
+CP-022,testing hold,kitchen,medium,in_progress,34,False,NY,internal_audit,False,False,False,False,False,False
+CP-023,manifest variance,packaging,medium,in_progress,35,False,CA,internal_audit,False,False,False,False,False,False
