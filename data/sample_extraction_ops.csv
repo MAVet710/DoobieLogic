@@ -1,0 +1,23 @@
+batch_id,input_material_type,input_weight_g,output_type,output_weight_g,yield_pct,pass_fail,residual_solvent_flag,terpene_retention_pct,turnaround_hours,downtime_minutes,operator,batch_status,rework_flag
+EX-001,trim,1000,live resin,606.0,60.6,pass,False,79.18,16.45,88,op2,released,False
+EX-002,trim,1000,distillate,719.1,71.91,pass,False,87.45,18.68,110,op3,released,False
+EX-003,fresh frozen,1000,live resin,700.0,70.0,pass,False,60.56,12.08,13,op4,released,False
+EX-004,trim,1000,distillate,742.0,74.2,pass,False,72.81,23.49,69,op1,released,False
+EX-005,trim,1000,live resin,617.5,61.75,pass,False,66.35,23.25,100,op2,released,False
+EX-006,fresh frozen,1000,distillate,636.1,63.61,pass,False,63.89,17.86,11,op3,released,True
+EX-007,trim,1000,live resin,610.5,61.05,pass,False,83.28,25.18,43,op4,hold,False
+EX-008,trim,1000,distillate,656.4,65.64,pass,True,73.52,15.67,24,op1,released,False
+EX-009,fresh frozen,1000,live resin,643.6,64.36,fail,False,67.04,17.98,139,op2,released,False
+EX-010,trim,1000,distillate,620.6,62.06,pass,False,81.84,15.46,10,op3,released,False
+EX-011,trim,1000,live resin,663.1,66.31,pass,False,75.58,19.02,127,op4,released,False
+EX-012,fresh frozen,1000,distillate,684.0,68.4,pass,False,81.55,19.44,56,op1,released,True
+EX-013,trim,1000,live resin,772.7,77.27,pass,False,81.35,22.35,75,op2,released,False
+EX-014,trim,1000,distillate,491.0,49.1,pass,False,86.14,9.27,14,op3,hold,False
+EX-015,fresh frozen,1000,live resin,634.0,63.4,pass,False,79.89,13.06,78,op4,released,False
+EX-016,trim,1000,distillate,517.2,51.72,pass,True,75.62,14.2,27,op1,released,False
+EX-017,trim,1000,live resin,536.9,53.69,pass,False,63.42,25.14,79,op2,released,False
+EX-018,fresh frozen,1000,distillate,700.4,70.04,fail,False,64.72,20.65,137,op3,released,True
+EX-019,trim,1000,live resin,641.1,64.11,pass,False,55.78,14.96,117,op4,released,False
+EX-020,trim,1000,distillate,750.7,75.07,pass,False,63.53,12.56,140,op1,released,False
+EX-021,fresh frozen,1000,live resin,812.1,81.21,pass,False,86.86,15.77,15,op2,hold,False
+EX-022,trim,1000,distillate,556.6,55.66,pass,False,68.11,8.64,51,op3,released,False
