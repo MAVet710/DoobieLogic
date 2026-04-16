@@ -121,8 +121,11 @@ def interpret_extraction_inventory(inventory: list[dict]) -> str:
     aging_lots = 0
     low_stock = 0
     coa_risk = 0
+    invalid_negative_weights = 0
     for row in inventory:
         weight = _to_float(row.get("available_weight_g"))
+        if weight < 0:
+            invalid_negative_weights += 1
         total_weight += max(weight, 0)
         if _to_float(row.get("days_since_received")) > 30:
             aging_lots += 1
@@ -132,10 +135,13 @@ def interpret_extraction_inventory(inventory: list[dict]) -> str:
         if coa_status in {"pending", "failed"}:
             coa_risk += 1
 
-    return (
+    base = (
         f"Extraction inventory includes {len(inventory)} lots totaling {total_weight:,.0f}g. "
         f"Aging lots (>30 days): {aging_lots}. Low-stock lots: {low_stock}. COA watchouts: {coa_risk}."
     )
+    if invalid_negative_weights > 0:
+        base += f" Data quality watchout: {invalid_negative_weights} lots reported negative available weight."
+    return base
 
 
 def interpret_projected_output(context: dict) -> str:

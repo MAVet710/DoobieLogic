@@ -49,7 +49,7 @@ def _buyer_exec_summary(context: dict) -> str:
     if _to_int(tracked, 0) <= 0 or at_risk <= 0:
         return base + ", no immediate risk concentration flags were detected."
 
-    ratio = at_risk / max(_to_int(tracked, 1), 1)
+    ratio = at_risk / _to_int(tracked, 1)
     if ratio > 0.15:
         tone = "Significant risk concentration"
     elif ratio <= 0.05:
@@ -86,6 +86,7 @@ def _buyer_overstock_section(context: dict) -> str:
     lines: list[str] = []
     overstock = _to_int(context.get("overstock_count"), 0)
     tracked = _to_int(context.get("tracked_skus"), 0)
+    tracked_safe = max(tracked, 1)
     if overstock > 0:
         lines.append(f"**{format_number(overstock)} SKUs show excess inventory pressure.**")
 
@@ -97,7 +98,7 @@ def _buyer_overstock_section(context: dict) -> str:
             f"{format_number(row.get('days_on_hand'))} DOH — consider markdown or bundle strategy"
         )
 
-    if tracked > 0 and overstock / tracked > 0.2:
+    if tracked > 0 and overstock / tracked_safe > 0.2:
         lines.append("Heavy overstock concentration. Recommend immediate markdown review meeting.")
     if _to_int(context.get("aging_inventory_count"), 0) > 0:
         lines.append(f"Aging inventory watchout: {format_number(context.get('aging_inventory_count'))} SKUs beyond preferred age window.")
@@ -140,12 +141,13 @@ def _buyer_actions_section(context: dict) -> str:
     overstock = _to_int(context.get("overstock_count"), 0)
     tracked = _to_int(context.get("tracked_skus"), 0)
     at_risk = _to_int(context.get("at_risk_skus"), 0)
+    tracked_safe = max(tracked, 1)
 
     if context.get("reorder_candidates"):
         actions.append(f"Process POs for {format_number(low_stock)} low-stock SKUs")
     if overstock > 0:
         actions.append(f"Review markdown candidates — {format_number(overstock)} SKUs above DOH target")
-    if tracked > 0 and at_risk / tracked > 0.10:
+    if tracked > 0 and at_risk / tracked_safe > 0.10:
         actions.append(f"Schedule risk review for {format_number(at_risk)} flagged SKUs")
     actions.append("Validate current DOH thresholds against last 30-day velocity")
 
@@ -187,7 +189,9 @@ def generate_inventory_check_response(context: dict) -> str:
         stands_out.append("Stock levels appear healthy across the filtered view.")
 
     threshold = context.get("doh_threshold")
-    rows_over = [row for row in rows if _to_float(row.get("days_on_hand"), 0) > _to_float(threshold, 10**9)]
+    rows_over = []
+    if threshold is not None:
+        rows_over = [row for row in rows if _to_float(row.get("days_on_hand"), 0) > _to_float(threshold, float("inf"))]
     if threshold is not None and rows_over:
         stands_out.append(f"**{format_number(len(rows_over))} SKUs exceed your {format_number(threshold)}-day target** — these are tying up capital")
 
@@ -273,10 +277,13 @@ def generate_copilot_response(context: dict, question: str) -> str:
         f"Additional context: out-of-stock {format_number(context.get('out_of_stock_count'))}, overstock {format_number(context.get('overstock_count'))}, slow movers {format_number(context.get('slow_mover_count'))}",
     ]
 
+    typical_actions = frame.get("typical_actions", [])
+    first_action = typical_actions[0] if len(typical_actions) > 0 else "review priority risks"
+    second_action = typical_actions[1] if len(typical_actions) > 1 else "align immediate mitigation owners"
     actions = [
         "What I'd recommend:",
-        f"- Start with {frame.get('typical_actions', ['review priority risks'])[0]}",
-        f"- Then {frame.get('typical_actions', ['review priority risks', 'align next steps'])[1]}",
+        f"- Start with {first_action}",
+        f"- Then {second_action}",
         "- Confirm thresholds and ownership before the next refresh cycle",
     ]
     next_step = "Next step: " + actions[1].replace("- ", "")
@@ -337,7 +344,7 @@ def generate_extraction_ops_response(context: dict) -> str:
         throughput.append(interpret_process_tracker(context.get("process_batches", [])))
 
     actions = prioritize_extraction_actions(context)
-    shift_focus = f"Focus next shift on: {actions[0]}"
+    shift_focus = f"Focus next shift on: {actions[0] if actions else 'standard operational monitoring and QA alignment'}"
     return "\n\n".join(
         [
             "## Operational Health\n" + "\n".join(health),

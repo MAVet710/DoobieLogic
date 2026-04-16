@@ -183,13 +183,16 @@ def safe_get(d: dict, *keys, default=None):
     for key in keys:
         if not isinstance(current, dict):
             return default
-        current = current.get(key, default)
+        if key not in current:
+            return default
+        current = current.get(key)
+    if current is None:
+        return default
     return current
 
 
-def truncate_list(items: list, max_items: int = 10, label: str = "items") -> list:
+def truncate_list(items: list, max_items: int = 10) -> list:
     """Return a list truncated to max_items while keeping ordering."""
-    _ = label
     if len(items) <= max_items:
         return items
     return items[:max_items]
