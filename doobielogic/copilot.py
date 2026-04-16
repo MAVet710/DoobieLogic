@@ -54,13 +54,12 @@ class DoobieCopilot:
         safe_persona = persona if persona in PERSONA_GUIDANCE else "buyer"
         safe_state = state.upper() if isinstance(state, str) and state.strip() else None
         grounded = build_grounded_summary(question=question, state=safe_state, module=MODULE_MAP[safe_persona])
-        guidance = PERSONA_GUIDANCE[safe_persona]
+        knowledge = search_department_knowledge(safe_persona, question)
         answer_parts = [
             f"Role lens: {PERSONA_GUIDANCE[safe_persona]}",
             render_department_knowledge_summary(knowledge),
             "Grounded source context:\n" + grounded["answer"],
         ]
-        suggestions = self._suggestions_for(safe_persona)
         return CopilotResponse(
             answer="\n\n".join(answer_parts),
             grounding=grounded["grounding"],
@@ -89,29 +88,6 @@ class DoobieCopilot:
             sources=grounded.get("sources", []),
             suggestions=self._suggestions_for(safe_persona),
         )
-
-    def ask_with_buyer_brain(self, question: str, mapped_data: dict[str, list] | None, persona: Persona = "buyer", state: str | None = None) -> CopilotResponse:
-        safe_persona = persona if persona in PERSONA_GUIDANCE else "buyer"
-        safe_state = state.upper() if isinstance(state, str) and state.strip() else None
-        grounded = build_grounded_summary(question=question, state=safe_state, module=MODULE_MAP[safe_persona])
-
-        data_insights = analyze_mapped_data(mapped_data or {}) if mapped_data else {}
-        data_summary = render_insight_summary(data_insights)
-        answer_sections = [f"Role lens: {PERSONA_GUIDANCE[safe_persona]}", "File intelligence:\n" + data_summary]
-        if safe_persona in {"buyer", "retail_ops"} and mapped_data:
-            buyer_results = summarize_buyer_opportunities(mapped_data)
-            answer_sections.append(render_buyer_brain_summary(buyer_results))
-        elif mapped_data:
-            answer_sections.append("Department-specific operational analysis is preferred for this persona; buyer-only claims are minimized.")
-        answer_sections.append("Grounded source context:\n" + grounded["answer"])
-        return CopilotResponse(
-            answer="\n\n".join(answer_sections),
-            grounding=grounded["grounding"],
-            confidence=grounded["confidence"],
-            sources=grounded.get("sources", []),
-            suggestions=self._suggestions_for(safe_persona),
-        )
-
 
     def ask_with_buyer_brain(
         self,
@@ -159,7 +135,17 @@ class DoobieCopilot:
             f"Market pressure: {analysis.market_pressure}\n\n"
             f"Recommendations:\n- " + "\n- ".join(analysis.recommendations)
         )
-        return CopilotResponse(answer=answer, grounding=grounded["grounding"], confidence=grounded["confidence"], sources=list(dict.fromkeys((analysis.regulation_links or {}).values())) + grounded.get("sources", []), suggestions=self._suggestions_for(persona if persona in PERSONA_GUIDANCE else "buyer"), analysis=analysis)
+        analysis_sources = [link for link in (analysis.regulation_links or {}).values() if isinstance(link, str) and link.strip()]
+        grounded_sources = [link for link in grounded.get("sources", []) if isinstance(link, str) and link.strip()]
+        sources = list(dict.fromkeys(analysis_sources + grounded_sources))
+        return CopilotResponse(
+            answer=answer,
+            grounding=grounded["grounding"],
+            confidence=grounded["confidence"],
+            sources=sources,
+            suggestions=self._suggestions_for(persona if persona in PERSONA_GUIDANCE else "buyer"),
+            analysis=analysis,
+        )
 
     def _suggestions_for(self, persona: Persona) -> list[str]:
         bank = {
