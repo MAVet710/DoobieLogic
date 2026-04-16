@@ -27,3 +27,10 @@ def test_ask_with_buyer_brain_non_buyer_stays_cautious():
     mapped = {"quantity": [1, 2], "inventory": [10, 5]}
     res = copilot.ask_with_buyer_brain("ops check", mapped_data=mapped, persona="compliance", state="NY")
     assert "Buyer-specific recommendations are limited" in res.answer
+
+
+def test_ask_uses_department_knowledge_without_crashing():
+    copilot = DoobieCopilot()
+    res = copilot.ask("What should I focus on?", persona="buyer", state="CA")
+    assert "Role lens:" in res.answer
+    assert "Grounded source context:" in res.answer

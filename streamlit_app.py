@@ -108,22 +108,22 @@ for item in reversed(st.session_state.chat_history):
     st.markdown(f"**You:** {item.get('q', '')}")
 
     st.markdown("### 🧠 Answer")
-    st.write(getattr(res, "answer", "No answer available."))
+    st.write(res.get("answer", "No answer available."))
 
     st.markdown("### ⚠️ Confidence")
-    confidence = str(getattr(res, "confidence", "unknown")).upper()
+    confidence = str(res.get("confidence", "unknown")).upper()
     st.write(confidence)
 
     st.markdown("### 🔍 Grounding")
-    st.write(getattr(res, "grounding", "No grounding data available."))
+    st.write(res.get("grounding", "No grounding data available."))
 
-    sources = getattr(res, "sources", []) or []
+    sources = res.get("sources", []) or []
     if sources:
         st.markdown("### 📚 Sources")
         for s in sources:
             st.write(f"- {s}")
 
-    suggestions = getattr(res, "suggestions", []) or []
+    suggestions = res.get("suggestions", []) or []
     if suggestions:
         st.markdown("### ⚡ Next Moves")
         for s in suggestions:
