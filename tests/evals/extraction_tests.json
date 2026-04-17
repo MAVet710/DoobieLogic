@@ -1,0 +1,29 @@
+[
+  {
+    "name": "low_yield_bad_run",
+    "input": {
+      "mode": "extraction",
+      "question": "How did this run perform?",
+      "data": {"method": "BHO", "input_grams": 1000, "output_grams": 50, "failed_batches": 1}
+    },
+    "expected_behavior": [
+      "flags low yield",
+      "flags failed batch risk",
+      "recommends SOP/QA review"
+    ],
+    "failure_condition": "Treats run as success despite low yield and failed batches"
+  },
+  {
+    "name": "high_yield_low_value_warning",
+    "input": {
+      "mode": "extraction",
+      "question": "Is high yield enough to call success?",
+      "data": {"yield_percent": 24, "value_per_gram": 3.0}
+    },
+    "expected_behavior": [
+      "mentions high-yield-low-value trap",
+      "connects yield to profitability logic"
+    ],
+    "failure_condition": "Declares success without value/margin context"
+  }
+]
