@@ -185,7 +185,7 @@ PUBLIC_KNOWLEDGE_RECORDS_V2: tuple[dict, ...] = (
     },
     {
         "record_id": "metrc_about",
-        "state": null,
+        "state": None,
         "domain": "tracking",
         "topic": "traceability_platform",
         "title": "Metrc platform overview",
@@ -199,7 +199,7 @@ PUBLIC_KNOWLEDGE_RECORDS_V2: tuple[dict, ...] = (
     },
     {
         "record_id": "scco2_selectivity_2022",
-        "state": null,
+        "state": None,
         "domain": "extraction_science",
         "topic": "supercritical_co2_selectivity",
         "title": "Supercritical CO2 extraction selectivity and optimization",
@@ -213,7 +213,7 @@ PUBLIC_KNOWLEDGE_RECORDS_V2: tuple[dict, ...] = (
     },
     {
         "record_id": "scco2_fractionation_2022",
-        "state": null,
+        "state": None,
         "domain": "extraction_science",
         "topic": "fractionation_strategy",
         "title": "SC-CO2 terpene-rich and CBD-rich fractionation study",
@@ -227,7 +227,7 @@ PUBLIC_KNOWLEDGE_RECORDS_V2: tuple[dict, ...] = (
     },
     {
         "record_id": "decarb_review_2021",
-        "state": null,
+        "state": None,
         "domain": "extraction_science",
         "topic": "decarboxylation",
         "title": "Acidic cannabinoid decarboxylation review",
@@ -241,7 +241,7 @@ PUBLIC_KNOWLEDGE_RECORDS_V2: tuple[dict, ...] = (
     },
     {
         "record_id": "decarb_kinetics_2024",
-        "state": null,
+        "state": None,
         "domain": "extraction_science",
         "topic": "decarboxylation_kinetics",
         "title": "Thermo-chemical conversion kinetics of cannabinoid acids",
