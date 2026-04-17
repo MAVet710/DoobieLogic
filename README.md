@@ -87,18 +87,34 @@ DoobieLogic acts as a **support service** for Buyer Dashboard. Buyer Dashboard r
 
 ### Standard support response
 
-All support endpoints return:
+All support endpoints return this standardized internal contract:
 
 ```json
 {
   "answer": "string",
   "explanation": "string",
   "recommendations": ["string"],
-  "confidence": "string",
+  "confidence": "high|medium|low",
   "sources": ["string"],
-  "mode": "string"
+  "mode": "buyer|inventory|extraction|ops|copilot|compliance|executive",
+  "risk_flags": ["string"],
+  "inefficiencies": ["string"]
 }
 ```
+
+### Response modes
+
+DoobieLogic applies a mode-specific response style through `doobielogic/response_system.py`:
+
+- **buyer**: assortment gaps, dead inventory, velocity, reorder pressure, margin-aware actions.
+- **inventory**: low stock, overstock, DOH imbalance, immediate tactical actions.
+- **extraction**: yield, stage loss, failed batches, throughput, formulation/terpene context, cost/value/margin.
+- **ops**: bottlenecks, recurring risk, ownership, execution.
+- **copilot**: direct answer first, explanation second, practical next step.
+- **compliance**: conservative framing, traceability, recurrence, verification.
+- **executive**: concise summary, cross-functional issues, decision-ready next actions.
+
+Confidence is inferred from structured data coverage, source grounding, and relevant operational/compliance rules—not hardcoded.
 
 ### Example request
 

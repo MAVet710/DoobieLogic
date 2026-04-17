@@ -59,6 +59,8 @@ def _support_response(resp, mode: str) -> dict[str, Any]:
         "confidence": resp.confidence,
         "sources": resp.sources,
         "mode": mode,
+        "risk_flags": resp.risk_flags,
+        "inefficiencies": resp.inefficiencies,
     }
     return apply_low_confidence_fallback(standard)
 
