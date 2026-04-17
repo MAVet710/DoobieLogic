@@ -1,0 +1,29 @@
+[
+  {
+    "name": "low_doh_restock_risk",
+    "input": {
+      "mode": "buyer",
+      "question": "What should I reorder this week?",
+      "data": {"days_on_hand": 8, "sell_through_rate": 0.52, "velocity": 9}
+    },
+    "expected_behavior": [
+      "flags restock risk",
+      "recommends replenishment action",
+      "references buyer rules"
+    ],
+    "failure_condition": "No risk flag or no recommendation when DOH is below threshold"
+  },
+  {
+    "name": "high_doh_dead_inventory",
+    "input": {
+      "mode": "inventory",
+      "question": "Where is inventory getting stale?",
+      "data": {"days_on_hand": 95, "sell_through_rate": 0.18}
+    },
+    "expected_behavior": [
+      "flags dead inventory risk",
+      "recommends markdown/assortment optimization"
+    ],
+    "failure_condition": "Returns high confidence without mentioning overstock risk"
+  }
+]

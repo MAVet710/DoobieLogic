@@ -3,7 +3,15 @@ from __future__ import annotations
 from doobielogic.copilot import DoobieCopilot
 
 
-def test_ask_with_buyer_brain_layers_answer_for_buyer():
+def test_ask_uses_context_engine_without_signature_errors():
+    copilot = DoobieCopilot()
+    res = copilot.ask("What stands out?", persona="buyer", state="MA")
+    assert isinstance(res.answer, str)
+    assert isinstance(res.explanation, str)
+    assert res.mode == "buyer"
+
+
+def test_ask_with_buyer_brain_layers_explanation_for_buyer():
     copilot = DoobieCopilot()
     mapped = {
         "product": ["A", "B", "C"],
@@ -16,14 +24,17 @@ def test_ask_with_buyer_brain_layers_answer_for_buyer():
     }
 
     res = copilot.ask_with_buyer_brain("find slow movers", mapped_data=mapped, persona="buyer", state="CA")
-    assert "Role lens:" in res.answer
-    assert "File intelligence:" in res.answer
-    assert "Buyer brain" in res.answer
-    assert "Grounded source context:" in res.answer
+    assert res.mode == "inventory"
+    assert "Role lens:" in res.explanation
+    assert "File intelligence:" in res.explanation
+    assert "Buyer brain" in res.explanation
+    assert "Grounded source context:" in res.explanation
+    assert isinstance(res.recommendations, list)
 
 
 def test_ask_with_buyer_brain_non_buyer_stays_cautious():
     copilot = DoobieCopilot()
     mapped = {"quantity": [1, 2], "inventory": [10, 5]}
     res = copilot.ask_with_buyer_brain("ops check", mapped_data=mapped, persona="compliance", state="NY")
-    assert "Buyer-specific recommendations are limited" in res.answer
+    assert "Buyer-specific recommendations are limited" in res.explanation
+    assert res.mode == "ops"
