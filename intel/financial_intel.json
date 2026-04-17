@@ -13,12 +13,7 @@
   },
   "value_logic": {
     "value_per_gram": "expected_revenue / max(total_output_grams, 0.01)",
-    "drivers": [
-      "product_mix",
-      "channel_price",
-      "brand_tier",
-      "potency_or_quality_grade"
-    ]
+    "drivers": ["product_mix", "channel_price", "brand_tier", "potency_or_quality_grade"]
   },
   "margin_logic": {
     "gross_margin": "(revenue - cost) / max(revenue, 0.01)",
@@ -37,24 +32,5 @@
       "id": "balanced_success",
       "rule": "yield_within_target and value_per_gram_above_benchmark and margin_above_floor"
     }
-  ],
-  "patterns": [
-    "high_yield_low_value_trap",
-    "cost_per_gram_spike"
-  ],
-  "relationships": [
-    {
-      "from": "yield_percent",
-      "to": "cost_per_gram",
-      "type": "inverse_when_cost_fixed"
-    },
-    {
-      "from": "value_per_gram",
-      "to": "margin",
-      "type": "drives"
-    }
-  ],
-  "decision_logic": {
-    "run_economics": "good_if_margin_above_floor_and_value_per_gram_above_benchmark"
-  }
+  ]
 }
