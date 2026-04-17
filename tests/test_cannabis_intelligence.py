@@ -1,29 +1,23 @@
-from doobielogic.cannabis_intelligence import build_ai_input, build_doobie_context
+from doobielogic.cannabis_intelligence import build_doobie_context, build_ai_input
 
 
-def test_build_doobie_context_includes_required_fields():
+def test_build_doobie_context_buyer_flags_low_doh():
     context = build_doobie_context(
         data={"days_on_hand": 10, "sell_through_rate": 0.25, "velocity": 3.4},
         mode="buyer",
-        question="What inventory is risky?",
-        state="CA",
     )
 
     assert context["mode"] == "buyer"
-    assert "kpis" in context
-    assert "file_insights" in context
-    assert "risk_flags" in context
-    assert "relevant_rules" in context
-    assert "department_knowledge" in context
-    assert "source_context" in context
+    assert context["inventory_summary"]["days_on_hand"] == 10
     assert any("restock risk" in flag.lower() for flag in context["risk_flags"])
+    assert "buyer_doh_low" in context["relevant_rules"]
 
 
 def test_build_ai_input_injects_structured_intel():
     ai_input = build_ai_input(
         question="What inventory is at risk?",
         data={"days_on_hand": 90, "sell_through_rate": 0.2},
-        mode="inventory",
+        mode="buyer",
         state="CA",
     )
 
