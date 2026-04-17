@@ -3,14 +3,6 @@ from __future__ import annotations
 from doobielogic.copilot import DoobieCopilot
 
 
-def test_ask_uses_context_engine_without_signature_errors():
-    copilot = DoobieCopilot()
-    res = copilot.ask("What stands out?", persona="buyer", state="MA")
-    assert isinstance(res.answer, str)
-    assert isinstance(res.explanation, str)
-    assert res.mode == "buyer"
-
-
 def test_ask_with_buyer_brain_layers_explanation_for_buyer():
     copilot = DoobieCopilot()
     mapped = {

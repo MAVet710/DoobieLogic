@@ -24,12 +24,7 @@
         "overheating_during_purge",
         "transfer_loss_between_vessels"
       ],
-      "typical_outputs": [
-        "shatter",
-        "badder",
-        "live_resin",
-        "diamonds_plus_sauce"
-      ],
+      "typical_outputs": ["shatter", "badder", "live_resin", "diamonds_plus_sauce"],
       "formulation_required_when": [
         "target_vape_viscosity_not_met",
         "native_terpenes_below_spec"
@@ -58,37 +53,20 @@
         "distillation_or_polish",
         "qa_release"
       ],
-      "yield_range_percent": {
-        "min": 6,
-        "max": 18
-      },
+      "yield_range_percent": {"min": 6, "max": 18},
       "common_losses": [
         "suboptimal_pressure_temperature_profile",
         "fraction_cross_contamination",
         "waxes_left_in_oil"
       ],
-      "typical_outputs": [
-        "crude_oil",
-        "distillate_feedstock",
-        "co2_vape_oil"
-      ],
-      "formulation_required_when": [
-        "flavor_profile_is_flat",
-        "viscosity_out_of_spec"
-      ],
+      "typical_outputs": ["crude_oil", "distillate_feedstock", "co2_vape_oil"],
+      "formulation_required_when": ["flavor_profile_is_flat", "viscosity_out_of_spec"],
       "terpene_handling": {
         "native": "Fractionation can preserve light terpenes when tuned.",
         "reintroduced": "Common after polishing/distillation for flavor restoration."
       },
-      "failure_points": [
-        "compressor_downtime",
-        "fractionation_misalignment"
-      ],
-      "efficiency_indicators": [
-        "run_cycle_time",
-        "co2_recycle_efficiency",
-        "dewaxing_rework_rate"
-      ]
+      "failure_points": ["compressor_downtime", "fractionation_misalignment"],
+      "efficiency_indicators": ["run_cycle_time", "co2_recycle_efficiency", "dewaxing_rework_rate"]
     },
     "Ethanol": {
       "workflow_stages": [
@@ -100,37 +78,20 @@
         "distillation_or_refinement",
         "qa_release"
       ],
-      "yield_range_percent": {
-        "min": 10,
-        "max": 25
-      },
+      "yield_range_percent": {"min": 10, "max": 25},
       "common_losses": [
         "chlorophyll_pickup_from_warm_soak",
         "ethanol_evaporation_loss",
         "distillation_hold_up"
       ],
-      "typical_outputs": [
-        "crude",
-        "winterized_oil",
-        "distillate",
-        "edible_input_oil"
-      ],
-      "formulation_required_when": [
-        "used_for_vape_or_tincture_targets"
-      ],
+      "typical_outputs": ["crude", "winterized_oil", "distillate", "edible_input_oil"],
+      "formulation_required_when": ["used_for_vape_or_tincture_targets"],
       "terpene_handling": {
         "native": "Often reduced in aggressive recovery/distillation.",
         "reintroduced": "Frequently needed for vape-ready profiles."
       },
-      "failure_points": [
-        "insufficient_chilling",
-        "residual_solvent_failure"
-      ],
-      "efficiency_indicators": [
-        "solvent_recovery_percent",
-        "post_winterization_loss_percent",
-        "distillate_pass_rate"
-      ]
+      "failure_points": ["insufficient_chilling", "residual_solvent_failure"],
+      "efficiency_indicators": ["solvent_recovery_percent", "post_winterization_loss_percent", "distillate_pass_rate"]
     },
     "Rosin": {
       "workflow_stages": [
@@ -141,36 +102,16 @@
         "optional_cure",
         "qa_release"
       ],
-      "yield_range_percent": {
-        "min": 10,
-        "max": 30
-      },
-      "common_losses": [
-        "overdry_input",
-        "blowouts",
-        "plate_temp_too_high"
-      ],
-      "typical_outputs": [
-        "solventless_rosin",
-        "jam",
-        "sauce"
-      ],
-      "formulation_required_when": [
-        "rosin_used_as_vape_fill"
-      ],
+      "yield_range_percent": {"min": 10, "max": 30},
+      "common_losses": ["overdry_input", "blowouts", "plate_temp_too_high"],
+      "typical_outputs": ["solventless_rosin", "jam", "sauce"],
+      "formulation_required_when": ["rosin_used_as_vape_fill"],
       "terpene_handling": {
         "native": "Primarily native terpene expression when process is controlled.",
         "reintroduced": "Rare; typically avoided for solventless positioning."
       },
-      "failure_points": [
-        "darkening_from_heat",
-        "inconsistent_press_pressure"
-      ],
-      "efficiency_indicators": [
-        "yield_per_press",
-        "micron_bag_failure_rate",
-        "return_to_input_value_ratio"
-      ]
+      "failure_points": ["darkening_from_heat", "inconsistent_press_pressure"],
+      "efficiency_indicators": ["yield_per_press", "micron_bag_failure_rate", "return_to_input_value_ratio"]
     },
     "Ice Water Hash": {
       "workflow_stages": [
@@ -181,36 +122,16 @@
         "grading",
         "qa_release"
       ],
-      "yield_range_percent": {
-        "min": 3,
-        "max": 8
-      },
-      "common_losses": [
-        "overagitation_contaminants",
-        "improper_drying",
-        "mesh_transfer_loss"
-      ],
-      "typical_outputs": [
-        "bubble_hash",
-        "full_melt_hash",
-        "rosin_feedstock"
-      ],
-      "formulation_required_when": [
-        "hash_upcycled_into_vape_or_ingredients"
-      ],
+      "yield_range_percent": {"min": 3, "max": 8},
+      "common_losses": ["overagitation_contaminants", "improper_drying", "mesh_transfer_loss"],
+      "typical_outputs": ["bubble_hash", "full_melt_hash", "rosin_feedstock"],
+      "formulation_required_when": ["hash_upcycled_into_vape_or_ingredients"],
       "terpene_handling": {
         "native": "High native retention with fresh frozen material.",
         "reintroduced": "Usually not required for premium solventless use-cases."
       },
-      "failure_points": [
-        "microbial_risk_from_slow_drying",
-        "oxidation"
-      ],
-      "efficiency_indicators": [
-        "first_wash_yield_share",
-        "melt_grade_distribution",
-        "drying_time_within_spec"
-      ]
+      "failure_points": ["microbial_risk_from_slow_drying", "oxidation"],
+      "efficiency_indicators": ["first_wash_yield_share", "melt_grade_distribution", "drying_time_within_spec"]
     },
     "Dry Sift": {
       "workflow_stages": [
@@ -221,67 +142,16 @@
         "optional_pressing",
         "qa_release"
       ],
-      "yield_range_percent": {
-        "min": 2,
-        "max": 12
-      },
-      "common_losses": [
-        "plant_contamination",
-        "overworking_material",
-        "handling_loss"
-      ],
-      "typical_outputs": [
-        "kief",
-        "sift_hash",
-        "rosin_feedstock"
-      ],
-      "formulation_required_when": [
-        "used_in_vape_or_edible_manufacturing"
-      ],
+      "yield_range_percent": {"min": 2, "max": 12},
+      "common_losses": ["plant_contamination", "overworking_material", "handling_loss"],
+      "typical_outputs": ["kief", "sift_hash", "rosin_feedstock"],
+      "formulation_required_when": ["used_in_vape_or_edible_manufacturing"],
       "terpene_handling": {
         "native": "Moderate retention with gentle handling.",
         "reintroduced": "Can be used for product consistency in manufactured goods."
       },
-      "failure_points": [
-        "low_purity",
-        "oxidation_during_storage"
-      ],
-      "efficiency_indicators": [
-        "purity_percent",
-        "grade_a_fraction",
-        "rework_rate"
-      ]
+      "failure_points": ["low_purity", "oxidation_during_storage"],
+      "efficiency_indicators": ["purity_percent", "grade_a_fraction", "rework_rate"]
     }
-  },
-  "rules": [
-    {
-      "id": "extract_low_yield_flag",
-      "if": "yield_percent < method_range_min",
-      "then": "flag_process_review"
-    },
-    {
-      "id": "extract_residual_fail_block",
-      "if": "residual_solvent_fail",
-      "then": "block_release_and_investigate"
-    }
-  ],
-  "patterns": [
-    "yield_drop_after_filter_change",
-    "high_throughput_with_high_rework"
-  ],
-  "relationships": [
-    {
-      "from": "input_quality",
-      "to": "yield_outcome",
-      "type": "drives"
-    },
-    {
-      "from": "purge_control",
-      "to": "terpene_retention",
-      "type": "influences"
-    }
-  ],
-  "decision_logic": {
-    "run_health": "pass_if_yield_in_range_and_qa_pass_and_failed_batches_zero"
   }
 }
