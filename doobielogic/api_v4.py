@@ -10,10 +10,13 @@ from doobielogic.copilot import DoobieCopilot
 from doobielogic.evals import apply_low_confidence_fallback
 from doobielogic.intelligence_v3 import build_intel_v3
 from doobielogic.learning_store_v1 import log_event, summarize_learning
+from doobielogic.license_store import LicenseStore
 
 app = FastAPI(title="DoobieLogic API v4")
 
 API_KEY = os.environ.get("DOOBIE_API_KEY", "")
+ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")
+LICENSE_STORE = LicenseStore(path=os.environ.get("DOOBIE_LICENSE_STORE", "data/license_store.json"))
 COPILOT = DoobieCopilot()
 
 
@@ -46,8 +49,51 @@ class SupportReq(BaseModel):
     persona: str | None = None
 
 
+class LicenseValidateReq(BaseModel):
+    license_key: str
+
+
+class CustomerCreateReq(BaseModel):
+    company_name: str
+    contact_name: str
+    contact_email: str
+    notes: str = ""
+
+
+class LicenseGenerateReq(BaseModel):
+    customer_id: str
+    plan_type: str
+    expires_at: str | None = None
+
+
+class LicenseRevokeReq(BaseModel):
+    license_key: str
+    revoked_reason: str | None = None
+
+
+class LicenseResetReq(BaseModel):
+    license_key: str
+    reason: str | None = None
+
+
 def auth(key: str | None) -> None:
     if API_KEY and key != API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def _parse_bearer(auth_header: str | None) -> str | None:
+    if not auth_header:
+        return None
+    prefix = "bearer "
+    safe = auth_header.strip()
+    if safe.lower().startswith(prefix):
+        return safe[len(prefix) :].strip()
+    return None
+
+
+def admin_auth(authorization: str | None) -> None:
+    token = _parse_bearer(authorization)
+    if ADMIN_API_KEY and token != ADMIN_API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
@@ -142,3 +188,65 @@ def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None
     routed_persona = "compliance" if mode == "compliance" else "executive"
     resp = COPILOT.ask(req.question, persona=routed_persona, state=req.state)
     return _support_response(resp, mode=routed_persona)
+
+
+@app.post("/api/v1/license/validate")
+def validate_license(req: LicenseValidateReq, x_api_key: str | None = Header(default=None)) -> dict[str, Any]:
+    auth(x_api_key)
+    return LICENSE_STORE.validate_license(req.license_key)
+
+
+@app.post("/api/v1/admin/customers")
+def admin_create_customer(req: CustomerCreateReq, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin_auth(authorization)
+    customer = LICENSE_STORE.create_customer(
+        company_name=req.company_name,
+        contact_name=req.contact_name,
+        contact_email=req.contact_email,
+        notes=req.notes,
+    )
+    return customer.to_dict()
+
+
+@app.get("/api/v1/admin/customers")
+def admin_list_customers(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin_auth(authorization)
+    customers = [c.to_dict() for c in LICENSE_STORE.list_customers()]
+    return {"customers": customers}
+
+
+@app.post("/api/v1/admin/licenses/generate")
+def admin_generate_license(req: LicenseGenerateReq, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin_auth(authorization)
+    try:
+        license_obj = LICENSE_STORE.create_license(req.customer_id, req.plan_type, expires_at=req.expires_at)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return license_obj.to_dict()
+
+
+@app.get("/api/v1/admin/licenses")
+def admin_list_licenses(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin_auth(authorization)
+    licenses = [l.to_dict() for l in LICENSE_STORE.list_licenses()]
+    return {"licenses": licenses}
+
+
+@app.post("/api/v1/admin/licenses/revoke")
+def admin_revoke_license(req: LicenseRevokeReq, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin_auth(authorization)
+    try:
+        license_obj = LICENSE_STORE.revoke_license(req.license_key, reason=req.revoked_reason)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return license_obj.to_dict()
+
+
+@app.post("/api/v1/admin/licenses/reset")
+def admin_reset_license(req: LicenseResetReq, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin_auth(authorization)
+    try:
+        result = LICENSE_STORE.reset_license(req.license_key, reason=req.reason)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"old_license": result["old"].to_dict(), "new_license": result["new"].to_dict()}

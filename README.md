@@ -130,3 +130,15 @@ curl -X POST http://localhost:8000/api/v1/support/buyer_brief \
 ```bash
 python -m pytest -q
 ```
+
+
+## Licensing and admin
+
+DoobieLogic now includes an opaque server-side licensing system used by Buyer Dashboard validation.
+
+- License authority is DoobieLogic (server-side key status is source of truth).
+- Admin management endpoints are protected with `Authorization: Bearer <ADMIN_API_KEY>`.
+- License validation endpoint is `POST /api/v1/license/validate` (service key protected).
+- A lightweight internal admin panel is available via `streamlit_admin.py`.
+
+See full documentation in `docs/licensing.md`.
