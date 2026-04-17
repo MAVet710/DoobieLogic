@@ -1,0 +1,33 @@
+{
+  "module": "compliance_intel",
+  "version": "1.0",
+  "metrc_basics": {
+    "package_ids": {
+      "definition": "Unique inventory/package tags used to identify cannabis lots and finished goods.",
+      "controls": ["must_be_unique", "must_map_to_physical_inventory", "must_be_auditable"]
+    },
+    "transfers": {
+      "definition": "Movement of cannabis goods between licensed entities with manifest-level traceability.",
+      "controls": ["origin_destination_match", "manifest_completeness", "chain_of_custody_integrity"]
+    },
+    "batch_tracking": {
+      "definition": "Grouping production events for test results, QA release, and recall capability.",
+      "controls": ["input_output_reconciliation", "test_status_visibility", "hold_release_state"]
+    }
+  },
+  "high_level_rules": [
+    {
+      "id": "traceability_end_to_end",
+      "principle": "Every inventory movement and transformation should be reconstructable from source to sale."
+    },
+    {
+      "id": "stage_tracking_required",
+      "principle": "Operational stages (receive, process, package, transfer, sell) must have attributable records."
+    },
+    {
+      "id": "exceptions_need_resolution",
+      "principle": "Any reconciliation gap or data mismatch should trigger a documented corrective workflow."
+    }
+  ],
+  "scope_note": "Conceptual framework only. State-specific statutory requirements are intentionally not hardcoded."
+}

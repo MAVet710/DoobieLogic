@@ -1,0 +1,42 @@
+{
+  "module": "product_taxonomy",
+  "version": "1.0",
+  "categories": {
+    "flower": {
+      "subtypes": ["whole_flower", "smalls", "shake"],
+      "forms": ["bulk", "eighth", "quarter", "half_ounce", "ounce"]
+    },
+    "pre_rolls": {
+      "subtypes": ["single", "multi_pack", "infused_pre_roll"],
+      "inputs": ["ground_flower", "flower_plus_concentrate"]
+    },
+    "concentrates": {
+      "subtypes": {
+        "live_resin": {"source": "fresh_frozen", "method_common": "BHO"},
+        "badder": {"source": "hydrocarbon_or_rosin", "texture": "whipped"},
+        "shatter": {"source": "hydrocarbon", "texture": "glass_like"},
+        "diamonds": {"source": "high_thca_fraction", "paired_with": "terp_sauce"},
+        "rosin": {"source": "solventless_press", "input": "flower_or_hash"},
+        "hash": {"source": "ice_water_or_dry_sift", "grade": "varies"}
+      }
+    },
+    "vapes": {
+      "subtypes": ["510_cart", "all_in_one", "pod"],
+      "oil_types": ["distillate", "live_resin_oil", "rosin_oil", "co2_oil"]
+    },
+    "edibles": {
+      "subtypes": ["gummies", "chocolates", "baked_goods", "beverages"],
+      "inputs": ["distillate", "full_spectrum_oil", "nano_emulsion"]
+    },
+    "tinctures": {
+      "subtypes": ["alcohol_based", "mct_oil_based", "glycerin_based"],
+      "inputs": ["distillate", "full_spectrum_extract"]
+    }
+  },
+  "relationships": [
+    {"from": "distillate", "to": "vape_oil", "relation": "base_input_for"},
+    {"from": "vape_oil", "to": "cart_fill", "relation": "fills"},
+    {"from": "hash", "to": "rosin", "relation": "pressed_into"},
+    {"from": "flower", "to": "pre_roll", "relation": "ground_and_filled_into"}
+  ]
+}

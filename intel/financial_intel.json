@@ -1,0 +1,36 @@
+{
+  "module": "financial_intel",
+  "version": "1.0",
+  "cost_logic": {
+    "cost_per_gram": "total_run_cost / max(total_output_grams, 0.01)",
+    "run_cost_components": [
+      "input_biomass_cost",
+      "labor_cost",
+      "solvent_or_utilities",
+      "packaging_cost",
+      "qa_and_compliance_cost"
+    ]
+  },
+  "value_logic": {
+    "value_per_gram": "expected_revenue / max(total_output_grams, 0.01)",
+    "drivers": ["product_mix", "channel_price", "brand_tier", "potency_or_quality_grade"]
+  },
+  "margin_logic": {
+    "gross_margin": "(revenue - cost) / max(revenue, 0.01)",
+    "contribution_margin": "(revenue - variable_costs) / max(revenue, 0.01)"
+  },
+  "yield_to_profit_relationships": [
+    {
+      "id": "low_yield_high_cost",
+      "rule": "if yield_percent < target and cost_per_gram > category_benchmark then bad_run"
+    },
+    {
+      "id": "high_yield_low_value",
+      "rule": "if yield_percent > target and value_per_gram < benchmark then misleading_success"
+    },
+    {
+      "id": "balanced_success",
+      "rule": "yield_within_target and value_per_gram_above_benchmark and margin_above_floor"
+    }
+  ]
+}
