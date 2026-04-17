@@ -64,6 +64,51 @@ streamlit run streamlit_app.py
 uvicorn doobielogic.api:app --reload
 ```
 
+## Buyer Dashboard support API contract
+
+DoobieLogic acts as a **support service** for Buyer Dashboard. Buyer Dashboard remains the source of truth for parsing, KPI computation, workflows, and UI.
+
+### Auth
+
+- Set API key in environment:
+  - `DOOBIE_API_KEY=your_key_here`
+- Send auth header on protected endpoints:
+  - `Authorization: Bearer <DOOBIE_API_KEY>`
+- `/health` is public; support and operational endpoints are protected.
+
+### New support endpoints
+
+- `GET /api/v1/auth/check`
+- `POST /api/v1/support/buyer_brief`
+- `POST /api/v1/support/inventory_check`
+- `POST /api/v1/support/extraction_brief`
+- `POST /api/v1/support/ops_brief`
+- `POST /api/v1/support/copilot`
+
+### Standard support response
+
+All support endpoints return:
+
+```json
+{
+  "answer": "string",
+  "explanation": "string",
+  "recommendations": ["string"],
+  "confidence": "string",
+  "sources": ["string"],
+  "mode": "string"
+}
+```
+
+### Example request
+
+```bash
+curl -X POST http://localhost:8000/api/v1/support/buyer_brief \
+  -H "Authorization: Bearer $DOOBIE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"question":"What inventory needs attention?","state":"CA","data":{"days_on_hand":10}}'
+```
+
 ## Tests
 
 ```bash

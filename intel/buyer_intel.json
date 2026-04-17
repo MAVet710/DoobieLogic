@@ -1,0 +1,111 @@
+{
+  "module": "buyer_intel",
+  "version": "1.0",
+  "inventory_logic": {
+    "metrics": {
+      "days_on_hand": "current_inventory_units / average_daily_units_sold",
+      "velocity": "units_sold_last_30d / 30",
+      "sell_through_rate": "units_sold / (units_sold + ending_inventory)"
+    },
+    "thresholds": {
+      "doh_low_risk": {
+        "max": 14,
+        "risk": "restock_risk"
+      },
+      "doh_high_risk": {
+        "min": 75,
+        "risk": "dead_inventory_risk"
+      }
+    },
+    "rules": [
+      {
+        "id": "buyer_doh_low",
+        "if": "days_on_hand < 14",
+        "then": "flag_restock_risk"
+      },
+      {
+        "id": "buyer_doh_high",
+        "if": "days_on_hand > 75",
+        "then": "flag_dead_inventory_risk"
+      },
+      {
+        "id": "buyer_low_sellthrough",
+        "if": "sell_through_rate < 0.3",
+        "then": "consider_markdown_or_assortment_change"
+      }
+    ]
+  },
+  "pricing_logic": {
+    "margin_targets": {
+      "flower": {
+        "min_percent": 45,
+        "target_percent": 55
+      },
+      "pre_roll": {
+        "min_percent": 40,
+        "target_percent": 50
+      },
+      "concentrate": {
+        "min_percent": 48,
+        "target_percent": 58
+      },
+      "vape": {
+        "min_percent": 42,
+        "target_percent": 55
+      },
+      "edible": {
+        "min_percent": 50,
+        "target_percent": 62
+      }
+    },
+    "discount_impact": {
+      "formula": "new_margin = (price*(1-discount)-cost)/max(price*(1-discount),0.01)",
+      "warning_rule": "if new_margin < min_margin_target then promo_is_margin_destructive"
+    }
+  },
+  "product_mix": {
+    "category_balancing": [
+      "avoid_single_category_over_40_percent_of_shelf",
+      "maintain_opening_price_point_mid_tier_premium_in_each_key_category"
+    ],
+    "sku_saturation": {
+      "rule": "if skus_in_category > velocity_supported_capacity then flag_sku_saturation",
+      "symptoms": [
+        "low_turn_tail",
+        "promo_dependency",
+        "duplicate_positioning"
+      ]
+    }
+  },
+  "vendor_logic": {
+    "quality_indicators": [
+      "coa_pass_rate",
+      "defect_rate",
+      "consumer_return_rate",
+      "on_time_fill_rate"
+    ],
+    "pricing_consistency": {
+      "rule": "stddev(unit_cost_last_8_orders) > tolerance => investigate_vendor_pricing_drift",
+      "tolerance_percent": 12
+    }
+  },
+  "patterns": [
+    "high_doh_low_sellthrough",
+    "promo_lift_but_margin_decay"
+  ],
+  "relationships": [
+    {
+      "from": "days_on_hand",
+      "to": "restock_or_overstock_risk",
+      "type": "signals"
+    },
+    {
+      "from": "discount_depth",
+      "to": "margin",
+      "type": "inverse"
+    }
+  ],
+  "decision_logic": {
+    "buy_decision": "prefer_skus_with_healthy_sellthrough_and_margin_above_floor"
+  }
+}
