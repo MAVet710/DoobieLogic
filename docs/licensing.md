@@ -58,6 +58,7 @@ Keys are generated server-side only, with random segments and plan prefix:
 
 - Admin endpoints require `Authorization: Bearer <ADMIN_API_KEY>`.
 - Validation endpoint uses the standard Doobie service API key (`DOOBIE_API_KEY`, via `x-api-key`).
+  - Buyer Dashboard compatibility: `Authorization: Bearer <DOOBIE_API_KEY>` is also accepted.
 
 ## Reset/Revoke behavior
 

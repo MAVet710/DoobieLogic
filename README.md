@@ -73,7 +73,8 @@ DoobieLogic acts as a **support service** for Buyer Dashboard. Buyer Dashboard r
 - Set API key in environment:
   - `DOOBIE_API_KEY=your_key_here`
 - Send auth header on protected endpoints:
-  - `Authorization: Bearer <DOOBIE_API_KEY>`
+  - `Authorization: Bearer <DOOBIE_API_KEY>` (Buyer Dashboard compatible)
+  - or `x-api-key: <DOOBIE_API_KEY>`
 - `/health` is public; support and operational endpoints are protected.
 
 ### New support endpoints

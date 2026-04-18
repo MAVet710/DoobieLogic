@@ -286,7 +286,7 @@ class KeyStore:
     def validate_api_key(self, input_key: str) -> dict[str, Any]:
         safe_key = (input_key or "").strip()
         if not safe_key:
-            return {"valid": False, "reason": "missing_key", "company": None, "scope": None, "expires": None}
+            return {"valid": False, "reason": "missing_key", "company": None, "scope": None, "expires_at": None, "expires": None}
         key_digest = hash_key(safe_key)
         with self._connect() as conn:
             row = conn.execute(
@@ -294,23 +294,24 @@ class KeyStore:
                 (KEY_TYPE_API, key_digest),
             ).fetchone()
         if not row:
-            return {"valid": False, "reason": "not_found", "company": None, "scope": None, "expires": None}
+            return {"valid": False, "reason": "not_found", "company": None, "scope": None, "expires_at": None, "expires": None}
 
         record = dict(row)
         expires_at = record.get("expires_at")
         if int(record.get("is_revoked") or 0) == 1:
-            return {"valid": False, "reason": "revoked", "company": record["company_name"], "scope": record["tier_or_scope"], "expires": expires_at}
+            return {"valid": False, "reason": "revoked", "company": record["company_name"], "scope": record["tier_or_scope"], "expires_at": expires_at, "expires": expires_at}
         if int(record.get("is_active") or 0) != 1:
-            return {"valid": False, "reason": "disabled", "company": record["company_name"], "scope": record["tier_or_scope"], "expires": expires_at}
+            return {"valid": False, "reason": "disabled", "company": record["company_name"], "scope": record["tier_or_scope"], "expires_at": expires_at, "expires": expires_at}
         if _is_expired(expires_at):
             self.toggle_key_status(record["id"], is_active=False)
-            return {"valid": False, "reason": "expired", "company": record["company_name"], "scope": record["tier_or_scope"], "expires": expires_at}
+            return {"valid": False, "reason": "expired", "company": record["company_name"], "scope": record["tier_or_scope"], "expires_at": expires_at, "expires": expires_at}
 
         return {
             "valid": True,
             "reason": "",
             "company": record["company_name"],
             "scope": record["tier_or_scope"],
+            "expires_at": expires_at,
             "expires": expires_at,
             "key_id": record["id"],
             "label": record["label"],

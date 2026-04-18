@@ -7,6 +7,7 @@ from typing import Any
 
 import streamlit as st
 
+from doobielogic.admin_auth import SESSION_AUTH_KEY, logout_admin, require_admin_auth
 from doobielogic.buyer_brain import render_buyer_brain_summary, summarize_buyer_opportunities
 from doobielogic.copilot import DoobieCopilot
 from doobielogic.parser import analyze_mapped_data, basic_cannabis_mapping, load_csv_bytes, render_insight_summary
@@ -51,10 +52,13 @@ def _initialize_session_state() -> None:
         "uploaded_file_token": "",
         "persona": "buyer",
         "state": sorted(REGULATION_LINKS.keys())[0],
+        SESSION_AUTH_KEY: False,
     }
     for key, default in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = default
+
+
 
 
 def _handle_upload() -> None:
@@ -133,8 +137,6 @@ def main() -> None:
     st.session_state["_rerun_count"] = int(st.session_state.get("_rerun_count", 0)) + 1
     logger.info("Streamlit rerun #%s startup completed in %.4fs", st.session_state["_rerun_count"], perf_counter() - app_start)
 
-    copilot = get_copilot()
-
     apply_buyer_dashboard_theme()
     render_page_hero(
         "🌿 DoobieLogic Copilot",
@@ -145,8 +147,15 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
+    if not require_admin_auth(form_key="app_admin_login", submit_label="Sign in"):
+        st.stop()
+
+    copilot = get_copilot()
+
     sidebar_start = perf_counter()
     st.sidebar.header("Workspace")
+    with st.sidebar:
+        logout_admin(button_key="app_admin_logout")
     persona_options = ["buyer", "retail_ops", "compliance", "extraction", "executive"]
     if st.session_state.persona not in persona_options:
         st.session_state.persona = "buyer"

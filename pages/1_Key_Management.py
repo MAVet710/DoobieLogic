@@ -5,6 +5,7 @@ from datetime import date
 
 import streamlit as st
 
+from doobielogic.admin_auth import logout_admin, require_admin_auth
 from doobielogic.key_management import KEY_TYPE_API, KEY_TYPE_LICENSE, KeyStore
 from doobielogic.ui_theme import apply_buyer_dashboard_theme, render_page_hero, section_close, section_open
 
@@ -16,37 +17,35 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
-def _admin_authenticated() -> bool:
-    configured = st.secrets.get("ADMIN_PASSWORD", None) if hasattr(st, "secrets") else None
-    admin_password = configured or os.environ.get("DOOBIE_ADMIN_PASSWORD")
-    if not admin_password:
-        st.error("Admin password is not configured. Set DOOBIE_ADMIN_PASSWORD or Streamlit secret ADMIN_PASSWORD.")
-        return False
-
-    if st.session_state.get("admin_authenticated"):
-        return True
-
-    with st.form("admin_login"):
-        provided = st.text_input("Admin password", type="password")
-        submitted = st.form_submit_button("Unlock Key Management")
-    if submitted:
-        if provided == admin_password:
-            st.session_state.admin_authenticated = True
-            st.success("Authenticated.")
-            st.rerun()
-        else:
-            st.error("Invalid admin password.")
-    return False
-
-
-if not _admin_authenticated():
+if not require_admin_auth(form_key="admin_login", submit_label="Unlock Key Management"):
     st.stop()
 
 store = KeyStore(path=os.environ.get("DOOBIE_KEY_DB", "data/key_store.db"))
-if st.button("Log out", key="admin_logout"):
-    st.session_state.admin_authenticated = False
-    st.rerun()
+logout_admin(button_key="admin_logout")
+
+if "latest_license_key" not in st.session_state:
+    st.session_state["latest_license_key"] = None
+if "latest_api_key" not in st.session_state:
+    st.session_state["latest_api_key"] = None
+if "latest_validation_result" not in st.session_state:
+    st.session_state["latest_validation_result"] = None
+
+
+def _render_latest_generated_key(state_key: str, *, kind: str) -> None:
+    generated = st.session_state.get(state_key)
+    if not generated:
+        return
+
+    st.success(f"{kind} key created. This is the only time the raw key is shown.")
+    st.code(generated["raw_key"])
+    st.download_button(
+        f"Download {kind} Key",
+        data=f"{generated['raw_key']}\n",
+        file_name=f"{kind.lower()}_key_{generated['record_id']}.txt",
+        mime="text/plain",
+        key=f"download_{kind.lower()}_{generated['record_id']}",
+    )
+
 
 tab_license, tab_api, tab_manage, tab_validate = st.tabs(
     ["License Keys", "API Keys", "Manage Keys", "Validation Tester"]
@@ -64,27 +63,26 @@ with tab_license:
         trial = st.checkbox("Trial license", value=False)
         notes = st.text_area("Notes")
         submitted = st.form_submit_button("Generate License Key")
-        if submitted:
-            if not company_name.strip():
-                st.error("Company name is required.")
-            else:
-                generated = store.create_license_key(
-                    company_name=company_name,
-                    email=contact_email or None,
-                    tier=tier,
-                    expiration_date=expiration if isinstance(expiration, date) else None,
-                    max_users=max_users,
-                    trial=trial,
-                    notes=notes,
-                )
-                st.success("License key created. This is the only time the raw key is shown.")
-                st.code(generated.raw_key)
-                st.download_button(
-                    "Download License Key",
-                    data=f"{generated.raw_key}\n",
-                    file_name=f"license_key_{generated.record_id}.txt",
-                    mime="text/plain",
-                )
+
+    if submitted:
+        if not company_name.strip():
+            st.error("Company name is required.")
+        else:
+            generated = store.create_license_key(
+                company_name=company_name,
+                email=contact_email or None,
+                tier=tier,
+                expiration_date=expiration if isinstance(expiration, date) else None,
+                max_users=max_users,
+                trial=trial,
+                notes=notes,
+            )
+            st.session_state["latest_license_key"] = {
+                "record_id": generated.record_id,
+                "raw_key": generated.raw_key,
+            }
+
+    _render_latest_generated_key("latest_license_key", kind="License")
     section_close()
 
 with tab_api:
@@ -97,25 +95,24 @@ with tab_api:
         expiration = st.date_input("Expiration date (optional)", value=None, key="api_expiration")
         notes = st.text_area("Notes", key="api_notes")
         submitted = st.form_submit_button("Generate API Key")
-        if submitted:
-            if not company_name.strip() or not label.strip() or not scope.strip():
-                st.error("Company, label, and scope are required.")
-            else:
-                generated = store.create_api_key(
-                    company_name=company_name,
-                    label=label,
-                    scope=scope,
-                    expiration_date=expiration if isinstance(expiration, date) else None,
-                    notes=notes,
-                )
-                st.success("API key created. This is the only time the raw key is shown.")
-                st.code(generated.raw_key)
-                st.download_button(
-                    "Download API Key",
-                    data=f"{generated.raw_key}\n",
-                    file_name=f"api_key_{generated.record_id}.txt",
-                    mime="text/plain",
-                )
+
+    if submitted:
+        if not company_name.strip() or not label.strip() or not scope.strip():
+            st.error("Company, label, and scope are required.")
+        else:
+            generated = store.create_api_key(
+                company_name=company_name,
+                label=label,
+                scope=scope,
+                expiration_date=expiration if isinstance(expiration, date) else None,
+                notes=notes,
+            )
+            st.session_state["latest_api_key"] = {
+                "record_id": generated.record_id,
+                "raw_key": generated.raw_key,
+            }
+
+    _render_latest_generated_key("latest_api_key", kind="API")
     section_close()
 
 with tab_manage:
@@ -164,18 +161,19 @@ with tab_manage:
             )
             new_trial = st.checkbox("Trial", value=bool(selected_record["trial"]), disabled=selected_record["key_type"] != KEY_TYPE_LICENSE)
             save_meta = st.form_submit_button("Save metadata")
-            if save_meta:
-                store.update_key_metadata(
-                    selected_record["id"],
-                    label=new_label,
-                    tier_or_scope=new_scope,
-                    expires_at=new_expiration or None,
-                    notes=new_notes,
-                    max_users=new_max_users if selected_record["key_type"] == KEY_TYPE_LICENSE else None,
-                    trial=new_trial if selected_record["key_type"] == KEY_TYPE_LICENSE else None,
-                )
-                st.success("Metadata updated.")
-                st.rerun()
+
+        if save_meta:
+            store.update_key_metadata(
+                selected_record["id"],
+                label=new_label,
+                tier_or_scope=new_scope,
+                expires_at=new_expiration or None,
+                notes=new_notes,
+                max_users=new_max_users if selected_record["key_type"] == KEY_TYPE_LICENSE else None,
+                trial=new_trial if selected_record["key_type"] == KEY_TYPE_LICENSE else None,
+            )
+            st.success("Metadata updated.")
+            st.rerun()
 
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -201,11 +199,16 @@ with tab_validate:
     with st.form("local_validate"):
         api_key = st.text_input("API key to validate", type="password")
         check = st.form_submit_button("Validate API key")
-        if check:
-            result = store.validate_api_key(api_key)
-            if result.get("valid"):
-                st.success("API key is valid.")
-            else:
-                st.error(f"Invalid key: {result.get('reason')}")
-            st.json(result)
+
+    if check:
+        st.session_state["latest_validation_result"] = store.validate_api_key(api_key)
+
+    result = st.session_state.get("latest_validation_result")
+    if result:
+        if result.get("valid"):
+            st.success("API key is valid.")
+        else:
+            st.error(f"Invalid key: {result.get('reason')}")
+        st.json(result)
+
     section_close()

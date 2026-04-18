@@ -22,6 +22,7 @@ def test_api_key_generation_and_validation(tmp_path):
     assert result["valid"] is True
     assert result["company"] == "Acme Cannabis"
     assert "buyer_dashboard" in result["permissions"]
+    assert "expires_at" in result
 
 
 def test_api_key_revoked_expired_and_disabled(tmp_path):
