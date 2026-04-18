@@ -140,11 +140,11 @@ if st.button("Ask DoobieLogic", type="primary", key="ask_button"):
                 response = copilot.ask_with_buyer_brain(
                     final_prompt,
                     mapped_data=st.session_state.mapped_data,
-                    persona=persona,
-                    state=state,
+                    persona=st.session_state.persona,
+                    state=st.session_state.state,
                 )
             else:
-                response = copilot.ask(final_prompt, persona=persona, state=state)
+                response = copilot.ask(final_prompt, persona=st.session_state.persona, state=st.session_state.state)
 
             st.session_state.chat_history.append({"q": final_prompt, "res": asdict(response)})
         except Exception as exc:  # visible debug instead of white-screen failure
