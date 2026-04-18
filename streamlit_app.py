@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import logging
 from dataclasses import asdict
 from time import perf_counter
@@ -16,11 +15,6 @@ from doobielogic.regulations import REGULATION_LINKS
 logger = logging.getLogger("doobielogic.streamlit")
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
-
-app_start = perf_counter()
-st.set_page_config(page_title="DoobieLogic", page_icon="🌿", layout="wide")
-logger.info("Streamlit rerun startup completed in %.4fs", perf_counter() - app_start)
-
 
 @st.cache_resource
 def get_copilot() -> DoobieCopilot:
@@ -45,54 +39,39 @@ def process_csv(file_bytes: bytes) -> tuple[dict[str, list[Any]] | None, dict[st
     return mapped_data, insights, buyer
 
 
-for key, default in {
-    "chat_history": [],
-    "csv_active": False,
-    "mapped_data": {},
-    "file_insights": {},
-    "buyer_brain": {},
-    "uploaded_file_name": "",
-    "uploaded_file_hash": "",
-}.items():
-    if key not in st.session_state:
-        st.session_state[key] = default
+def _initialize_session_state() -> None:
+    defaults = {
+        "chat_history": [],
+        "csv_active": False,
+        "mapped_data": {},
+        "file_insights": {},
+        "buyer_brain": {},
+        "uploaded_file_name": "",
+        "uploaded_file_token": "",
+        "persona": "buyer",
+        "state": sorted(REGULATION_LINKS.keys())[0],
+    }
+    for key, default in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = default
 
-copilot = get_copilot()
 
-st.title("🌿 DoobieLogic Copilot")
-st.caption("Department-aware cannabis operating copilot with curated learned knowledge and conservative grounded context.")
+def _handle_upload() -> None:
+    upload_start = perf_counter()
+    uploaded = st.file_uploader("Upload cannabis inventory CSV", type=["csv"], key="inventory_csv_uploader")
+    if uploaded is None:
+        logger.info("Upload section completed in %.4fs (no upload)", perf_counter() - upload_start)
+        return
 
-sidebar_start = perf_counter()
-st.sidebar.header("Workspace")
-persona = st.sidebar.selectbox("Role", ["buyer", "retail_ops", "compliance", "extraction", "executive"], key="persona_select")
-state = st.sidebar.selectbox("State", sorted(REGULATION_LINKS.keys()), key="state_select")
-
-st.sidebar.subheader("File Controls")
-if st.sidebar.button("Clear file", key="clear_file_btn"):
-    st.session_state.csv_active = False
-    st.session_state.mapped_data = {}
-    st.session_state.file_insights = {}
-    st.session_state.buyer_brain = {}
-    st.session_state.uploaded_file_name = ""
-    st.session_state.uploaded_file_hash = ""
-
-if st.sidebar.button("Clear chat", key="clear_chat_btn"):
-    st.session_state.chat_history = []
-logger.info("Sidebar rendered in %.4fs", perf_counter() - sidebar_start)
-
-upload_start = perf_counter()
-uploaded = st.file_uploader("Upload cannabis inventory CSV", type=["csv"], key="inventory_csv_uploader")
-if uploaded is not None:
-    file_bytes = uploaded.getvalue()
-    file_hash = hashlib.sha256(file_bytes).hexdigest()
+    upload_token = f"{getattr(uploaded, 'file_id', 'no-file-id')}::{uploaded.name}::{uploaded.size}"
     is_new_upload = (
-        uploaded.name != st.session_state.uploaded_file_name
-        or file_hash != st.session_state.uploaded_file_hash
+        upload_token != st.session_state.uploaded_file_token
+        or uploaded.name != st.session_state.uploaded_file_name
         or not st.session_state.csv_active
     )
-
     if is_new_upload:
         with st.spinner("Processing uploaded CSV..."):
+            file_bytes = uploaded.getvalue()
             mapped_data, insights, buyer = process_csv(file_bytes)
         if mapped_data is None:
             st.error("Could not parse CSV. Please upload a valid comma-separated file.")
@@ -103,84 +82,147 @@ if uploaded is not None:
             st.session_state.file_insights = insights
             st.session_state.buyer_brain = buyer
             st.session_state.uploaded_file_name = uploaded.name
-            st.session_state.uploaded_file_hash = file_hash
-logger.info("Upload section completed in %.4fs", perf_counter() - upload_start)
+            st.session_state.uploaded_file_token = upload_token
+    logger.info(
+        "Upload section completed in %.4fs (new_upload=%s)",
+        perf_counter() - upload_start,
+        is_new_upload,
+    )
 
-if st.session_state.csv_active:
-    st.success(f"CSV active: {st.session_state.uploaded_file_name}")
-else:
-    st.caption("No CSV active. Upload a file to unlock file intelligence and buyer-brain insights.")
 
-intel_render_start = perf_counter()
-with st.expander("📈 File Intelligence", expanded=True):
-    st.markdown(render_insight_summary(st.session_state.file_insights))
-    if st.session_state.buyer_brain:
-        st.markdown(render_buyer_brain_summary(st.session_state.buyer_brain))
-logger.info("File intelligence section rendered in %.4fs", perf_counter() - intel_render_start)
+def _render_chat_history() -> None:
+    chat_render_start = perf_counter()
+    for item in reversed(st.session_state.chat_history):
+        res = item.get("res")
+        if not isinstance(res, dict):
+            continue
 
-quick_action = st.selectbox(
-    "Quick actions",
-    ["None", "slow movers", "reorder opportunities", "markdown candidates", "category risk"],
-    key="quick_action_select",
-)
+        st.markdown("---")
+        st.markdown(f"**You:** {item.get('q', '')}")
 
-prompt = st.text_area("Ask anything", placeholder="Why is my inventory not moving?", height=120, key="prompt_area")
+        st.markdown("### 🧠 Answer")
+        st.write(res.get("answer", "No answer available."))
 
-if st.button("Ask DoobieLogic", type="primary", key="ask_button"):
-    final_prompt = prompt.strip()
-    if quick_action != "None":
-        final_prompt = (final_prompt + "\n\n" if final_prompt else "") + f"Quick action focus: {quick_action}."
+        st.markdown("### ⚠️ Confidence")
+        st.write(str(res.get("confidence", "unknown")).upper())
 
-    if not final_prompt:
-        st.warning("Please enter a question or select a quick action.")
+        explanation = res.get("explanation")
+        if explanation:
+            st.markdown("### 🧾 Explanation")
+            st.write(explanation)
+
+        sources = res.get("sources", []) or []
+        if sources:
+            st.markdown("### 📚 Sources")
+            for source in sources:
+                st.write(f"- {source}")
+
+        recommendations = res.get("recommendations", []) or []
+        if recommendations:
+            st.markdown("### ⚡ Next Moves")
+            for recommendation in recommendations:
+                st.write(f"- {recommendation}")
+    logger.info("Chat history rendered in %.4fs", perf_counter() - chat_render_start)
+
+
+def main() -> None:
+    app_start = perf_counter()
+    st.set_page_config(page_title="DoobieLogic", page_icon="🌿", layout="wide")
+    _initialize_session_state()
+    st.session_state["_rerun_count"] = int(st.session_state.get("_rerun_count", 0)) + 1
+    logger.info("Streamlit rerun #%s startup completed in %.4fs", st.session_state["_rerun_count"], perf_counter() - app_start)
+
+    copilot = get_copilot()
+
+    st.title("🌿 DoobieLogic Copilot")
+    st.caption("Department-aware cannabis operating copilot with curated learned knowledge and conservative grounded context.")
+
+    sidebar_start = perf_counter()
+    st.sidebar.header("Workspace")
+    persona_options = ["buyer", "retail_ops", "compliance", "extraction", "executive"]
+    if st.session_state.persona not in persona_options:
+        st.session_state.persona = "buyer"
+    st.session_state.persona = st.sidebar.selectbox(
+        "Role",
+        persona_options,
+        index=persona_options.index(st.session_state.persona),
+        key="persona_select",
+    )
+    state_options = sorted(REGULATION_LINKS.keys())
+    if st.session_state.state not in state_options:
+        st.session_state.state = state_options[0]
+    st.session_state.state = st.sidebar.selectbox(
+        "State",
+        state_options,
+        index=state_options.index(st.session_state.state),
+        key="state_select",
+    )
+
+    st.sidebar.subheader("File Controls")
+    if st.sidebar.button("Clear file", key="clear_file_btn"):
+        st.session_state.csv_active = False
+        st.session_state.mapped_data = {}
+        st.session_state.file_insights = {}
+        st.session_state.buyer_brain = {}
+        st.session_state.uploaded_file_name = ""
+        st.session_state.uploaded_file_token = ""
+
+    if st.sidebar.button("Clear chat", key="clear_chat_btn"):
+        st.session_state.chat_history = []
+    logger.info("Sidebar rendered in %.4fs", perf_counter() - sidebar_start)
+
+    _handle_upload()
+
+    if st.session_state.csv_active:
+        st.success(f"CSV active: {st.session_state.uploaded_file_name}")
     else:
-        ask_started = perf_counter()
-        try:
-            if st.session_state.mapped_data:
-                response = copilot.ask_with_buyer_brain(
-                    final_prompt,
-                    mapped_data=st.session_state.mapped_data,
-                    persona=st.session_state.persona,
-                    state=st.session_state.state,
-                )
-            else:
-                response = copilot.ask(final_prompt, persona=st.session_state.persona, state=st.session_state.state)
+        st.caption("No CSV active. Upload a file to unlock file intelligence and buyer-brain insights.")
 
-            st.session_state.chat_history.append({"q": final_prompt, "res": asdict(response)})
-        except Exception as exc:  # visible debug instead of white-screen failure
-            st.error(f"Copilot error: {exc}")
-        finally:
-            logger.info("Ask action completed in %.4fs", perf_counter() - ask_started)
+    intel_render_start = perf_counter()
+    with st.expander("📈 File Intelligence", expanded=True):
+        st.markdown(render_insight_summary(st.session_state.file_insights))
+        if st.session_state.buyer_brain:
+            st.markdown(render_buyer_brain_summary(st.session_state.buyer_brain))
+    logger.info("File intelligence section rendered in %.4fs", perf_counter() - intel_render_start)
 
-chat_render_start = perf_counter()
-for item in reversed(st.session_state.chat_history):
-    res = item.get("res")
-    if not isinstance(res, dict):
-        continue
+    with st.form("ask_copilot_form", clear_on_submit=False):
+        quick_action = st.selectbox(
+            "Quick actions",
+            ["None", "slow movers", "reorder opportunities", "markdown candidates", "category risk"],
+            key="quick_action_select",
+        )
+        prompt = st.text_area("Ask anything", placeholder="Why is my inventory not moving?", height=120, key="prompt_area")
+        submitted = st.form_submit_button("Ask DoobieLogic", type="primary")
 
-    st.markdown("---")
-    st.markdown(f"**You:** {item.get('q', '')}")
+    if submitted:
+        final_prompt = prompt.strip()
+        if quick_action != "None":
+            final_prompt = (final_prompt + "\n\n" if final_prompt else "") + f"Quick action focus: {quick_action}."
 
-    st.markdown("### 🧠 Answer")
-    st.write(res.get("answer", "No answer available."))
+        if not final_prompt:
+            st.warning("Please enter a question or select a quick action.")
+        else:
+            ask_started = perf_counter()
+            try:
+                if st.session_state.mapped_data:
+                    response = copilot.ask_with_buyer_brain(
+                        final_prompt,
+                        mapped_data=st.session_state.mapped_data,
+                        persona=st.session_state.persona,
+                        state=st.session_state.state,
+                    )
+                else:
+                    response = copilot.ask(final_prompt, persona=st.session_state.persona, state=st.session_state.state)
 
-    st.markdown("### ⚠️ Confidence")
-    st.write(str(res.get("confidence", "unknown")).upper())
+                st.session_state.chat_history.append({"q": final_prompt, "res": asdict(response)})
+            except Exception:  # visible debug instead of white-screen failure
+                logger.exception("Copilot ask flow failed")
+                st.error("Copilot error. Check server logs for traceback details.")
+            finally:
+                logger.info("Ask action completed in %.4fs", perf_counter() - ask_started)
 
-    explanation = res.get("explanation")
-    if explanation:
-        st.markdown("### 🧾 Explanation")
-        st.write(explanation)
+    _render_chat_history()
 
-    sources = res.get("sources", []) or []
-    if sources:
-        st.markdown("### 📚 Sources")
-        for source in sources:
-            st.write(f"- {source}")
 
-    recommendations = res.get("recommendations", []) or []
-    if recommendations:
-        st.markdown("### ⚡ Next Moves")
-        for recommendation in recommendations:
-            st.write(f"- {recommendation}")
-logger.info("Chat history rendered in %.4fs", perf_counter() - chat_render_start)
+if __name__ == "__main__":
+    main()
