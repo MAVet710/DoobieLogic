@@ -5,7 +5,7 @@ from datetime import date
 
 import streamlit as st
 
-from doobielogic.admin_auth import logout_admin, require_admin_auth
+from doobielogic.admin_auth import load_admin_auth_config, verify_admin_credentials
 from doobielogic.key_management import KEY_TYPE_API, KEY_TYPE_LICENSE, KeyStore
 from doobielogic.ui_theme import apply_buyer_dashboard_theme, render_page_hero, section_close, section_open
 
@@ -17,35 +17,46 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-if not require_admin_auth(form_key="admin_login", submit_label="Unlock Key Management"):
+
+if "admin_authenticated" not in st.session_state:
+    st.session_state["admin_authenticated"] = False
+
+
+def _admin_authenticated() -> bool:
+    config = load_admin_auth_config(st.secrets if hasattr(st, "secrets") else None, os.environ)
+
+    if not config.password_hash:
+        st.error("Admin authentication is not configured: password hash secret is missing.")
+        return False
+
+    if st.session_state.get("admin_authenticated"):
+        return True
+
+    with st.form("admin_login"):
+        username = ""
+        if config.username:
+            username = st.text_input("Admin username")
+        provided = st.text_input("Admin password", type="password")
+        submitted = st.form_submit_button("Unlock Key Management")
+
+    if submitted:
+        if verify_admin_credentials(username=username, password=provided, config=config):
+            st.session_state["admin_authenticated"] = True
+            st.success("Authenticated.")
+            st.rerun()
+        else:
+            st.error("Invalid admin credentials.")
+
+    return False
+
+
+if not _admin_authenticated():
     st.stop()
 
 store = KeyStore(path=os.environ.get("DOOBIE_KEY_DB", "data/key_store.db"))
-logout_admin(button_key="admin_logout")
-
-if "latest_license_key" not in st.session_state:
-    st.session_state["latest_license_key"] = None
-if "latest_api_key" not in st.session_state:
-    st.session_state["latest_api_key"] = None
-if "latest_validation_result" not in st.session_state:
-    st.session_state["latest_validation_result"] = None
-
-
-def _render_latest_generated_key(state_key: str, *, kind: str) -> None:
-    generated = st.session_state.get(state_key)
-    if not generated:
-        return
-
-    st.success(f"{kind} key created. This is the only time the raw key is shown.")
-    st.code(generated["raw_key"])
-    st.download_button(
-        f"Download {kind} Key",
-        data=f"{generated['raw_key']}\n",
-        file_name=f"{kind.lower()}_key_{generated['record_id']}.txt",
-        mime="text/plain",
-        key=f"download_{kind.lower()}_{generated['record_id']}",
-    )
-
+if st.button("Log out", key="admin_logout"):
+    st.session_state["admin_authenticated"] = False
+    st.rerun()
 
 tab_license, tab_api, tab_manage, tab_validate = st.tabs(
     ["License Keys", "API Keys", "Manage Keys", "Validation Tester"]
