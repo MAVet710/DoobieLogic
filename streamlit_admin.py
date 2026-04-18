@@ -6,13 +6,19 @@ import streamlit as st
 
 from doobielogic.license_models import ALLOWED_PLAN_TYPES
 from doobielogic.license_store import LicenseStore
+from doobielogic.ui_theme import apply_buyer_dashboard_theme, render_page_hero, section_close, section_open
 
 st.set_page_config(page_title="DoobieLogic Admin Licensing", page_icon="🔐", layout="wide")
-st.title("🔐 DoobieLogic Licensing Admin")
-st.caption("Internal admin view for customer and license management.")
+apply_buyer_dashboard_theme()
+render_page_hero("🔐 DoobieLogic Licensing Admin", "Internal admin operations aligned to the Buyer Dashboard system.")
+st.markdown(
+    "<span class='dl-pill dl-pill-accent'>Admin Portal</span><span class='dl-pill dl-pill-warning'>Restricted Access</span>",
+    unsafe_allow_html=True,
+)
 
 store = LicenseStore(path=os.environ.get("DOOBIE_LICENSE_STORE", "data/license_store.json"))
 
+section_open()
 left, right = st.columns(2)
 
 with left:
@@ -49,7 +55,9 @@ with right:
                     expires_at=expires_at.strip() or None,
                 )
                 st.success(f"License created: {license_obj.license_key}")
+section_close()
 
+section_open()
 st.subheader("Revoke / Reset License")
 with st.form("revoke_reset"):
     license_key = st.text_input("License Key")
@@ -69,9 +77,14 @@ with st.form("revoke_reset"):
                     st.success(f"Reset complete. New key: {reset['new'].license_key}")
             except ValueError as exc:
                 st.error(str(exc))
+section_close()
 
+section_open()
 st.subheader("Customers")
 st.dataframe([c.to_dict() for c in store.list_customers()], use_container_width=True)
+section_close()
 
+section_open()
 st.subheader("Licenses")
 st.dataframe([l.to_dict() for l in store.list_licenses()], use_container_width=True)
+section_close()

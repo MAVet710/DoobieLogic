@@ -11,6 +11,7 @@ from doobielogic.buyer_brain import render_buyer_brain_summary, summarize_buyer_
 from doobielogic.copilot import DoobieCopilot
 from doobielogic.parser import analyze_mapped_data, basic_cannabis_mapping, load_csv_bytes, render_insight_summary
 from doobielogic.regulations import REGULATION_LINKS
+from doobielogic.ui_theme import apply_buyer_dashboard_theme, render_page_hero, section_close, section_open
 
 logger = logging.getLogger("doobielogic.streamlit")
 if not logger.handlers:
@@ -134,8 +135,15 @@ def main() -> None:
 
     copilot = get_copilot()
 
-    st.title("🌿 DoobieLogic Copilot")
-    st.caption("Department-aware cannabis operating copilot with curated learned knowledge and conservative grounded context.")
+    apply_buyer_dashboard_theme()
+    render_page_hero(
+        "🌿 DoobieLogic Copilot",
+        "Department-aware cannabis operating copilot aligned to Buyer Dashboard design language.",
+    )
+    st.markdown(
+        "<span class='dl-pill dl-pill-accent'>Live Copilot</span><span class='dl-pill dl-pill-success'>Buyer Dashboard Styled</span>",
+        unsafe_allow_html=True,
+    )
 
     sidebar_start = perf_counter()
     st.sidebar.header("Workspace")
@@ -171,7 +179,23 @@ def main() -> None:
         st.session_state.chat_history = []
     logger.info("Sidebar rendered in %.4fs", perf_counter() - sidebar_start)
 
+    section_open()
+    st.subheader("Upload & Data Context")
     _handle_upload()
+    st.markdown("<div class='dl-kpi-grid'>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div class='dl-kpi'><div class='dl-kpi-label'>CSV Status</div><div class='dl-kpi-value'>{'Active' if st.session_state.csv_active else 'Idle'}</div></div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"<div class='dl-kpi'><div class='dl-kpi-label'>Persona</div><div class='dl-kpi-value'>{st.session_state.persona.title()}</div></div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"<div class='dl-kpi'><div class='dl-kpi-label'>Regulatory State</div><div class='dl-kpi-value'>{st.session_state.state}</div></div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
 
     if st.session_state.csv_active:
         st.success(f"CSV active: {st.session_state.uploaded_file_name}")
@@ -184,7 +208,10 @@ def main() -> None:
         if st.session_state.buyer_brain:
             st.markdown(render_buyer_brain_summary(st.session_state.buyer_brain))
     logger.info("File intelligence section rendered in %.4fs", perf_counter() - intel_render_start)
+    section_close()
 
+    section_open()
+    st.subheader("Ask DoobieLogic")
     with st.form("ask_copilot_form", clear_on_submit=False):
         quick_action = st.selectbox(
             "Quick actions",
@@ -193,6 +220,7 @@ def main() -> None:
         )
         prompt = st.text_area("Ask anything", placeholder="Why is my inventory not moving?", height=120, key="prompt_area")
         submitted = st.form_submit_button("Ask DoobieLogic", type="primary")
+    section_close()
 
     if submitted:
         final_prompt = prompt.strip()
@@ -221,7 +249,10 @@ def main() -> None:
             finally:
                 logger.info("Ask action completed in %.4fs", perf_counter() - ask_started)
 
+    section_open()
+    st.subheader("Conversation History")
     _render_chat_history()
+    section_close()
 
 
 if __name__ == "__main__":
