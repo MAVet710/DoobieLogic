@@ -4,9 +4,9 @@ import os
 
 import streamlit as st
 
+from doobielogic.admin_gateway import AdminGateway, AdminGatewayError
 from doobielogic.admin_auth import load_admin_auth_config, verify_admin_credentials
 from doobielogic.license_models import ALLOWED_PLAN_TYPES
-from doobielogic.license_store import LicenseStore
 from doobielogic.ui_theme import apply_buyer_dashboard_theme, render_page_hero, section_close, section_open
 
 st.set_page_config(page_title="DoobieLogic Admin Licensing", page_icon="🔐", layout="wide")
@@ -52,7 +52,13 @@ def _admin_authenticated() -> bool:
 if not _admin_authenticated():
     st.stop()
 
-store = LicenseStore(path=os.environ.get("DOOBIE_LICENSE_STORE", "data/license_store.json"))
+try:
+    gateway = AdminGateway()
+except AdminGatewayError as exc:
+    st.error(f"Storage/backend configuration error: {exc}")
+    st.stop()
+
+st.caption(f"Storage mode: `{gateway.storage_diagnostic().get('mode')}`")
 
 if st.button("Log out", key="admin_logout"):
     st.session_state["admin_authenticated"] = False
@@ -73,12 +79,12 @@ with left:
             if not company_name or not contact_name or not contact_email:
                 st.error("Company, contact name, and contact email are required.")
             else:
-                customer = store.create_customer(company_name, contact_name, contact_email, notes)
+                customer = gateway.create_customer(company_name, contact_name, contact_email, notes)
                 st.success(f"Customer created: {customer.customer_id}")
 
 with right:
     st.subheader("Generate License")
-    customers = store.list_customers()
+    customers = gateway.list_customers()
     customer_options = {f"{c.company_name} ({c.customer_id})": c.customer_id for c in customers}
     with st.form("generate_license"):
         selected_customer = st.selectbox("Customer", list(customer_options.keys()) if customer_options else ["No customers available"])
@@ -89,7 +95,7 @@ with right:
             if not customer_options:
                 st.error("Create a customer first.")
             else:
-                license_obj = store.create_license(
+                license_obj = gateway.create_license(
                     customer_options[selected_customer],
                     plan_type,
                     expires_at=expires_at.strip() or None,
@@ -110,10 +116,10 @@ with st.form("revoke_reset"):
         else:
             try:
                 if action == "Revoke":
-                    revoked = store.revoke_license(license_key, reason=reason or None)
+                    revoked = gateway.revoke_license(license_key, reason=reason or None)
                     st.success(f"Revoked {revoked.license_key}")
                 else:
-                    reset = store.reset_license(license_key, reason=reason or None)
+                    reset = gateway.reset_license(license_key, reason=reason or None)
                     st.success(f"Reset complete. New key: {reset['new'].license_key}")
             except ValueError as exc:
                 st.error(str(exc))
@@ -121,10 +127,10 @@ section_close()
 
 section_open()
 st.subheader("Customers")
-st.dataframe([c.to_dict() for c in store.list_customers()], use_container_width=True)
+st.dataframe([c.to_dict() for c in gateway.list_customers()], use_container_width=True)
 section_close()
 
 section_open()
 st.subheader("Licenses")
-st.dataframe([l.to_dict() for l in store.list_licenses()], use_container_width=True)
+st.dataframe([l.to_dict() for l in gateway.list_licenses()], use_container_width=True)
 section_close()

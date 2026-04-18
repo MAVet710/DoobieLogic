@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from doobielogic.api_v4 import app
+from doobielogic.key_management import KeyStore
 from doobielogic.license_store import LicenseStore
 
 
@@ -122,7 +123,8 @@ def test_license_validation_auth_failure_is_clear(monkeypatch, tmp_path):
         json={"license_key": "DB-TRIAL-XXXX-YYYY-ZZZZ"},
     )
     assert wrong.status_code == 401
-    assert wrong.json()["detail"] == "Invalid service API key."
+    assert "Invalid service API key" in wrong.json()["detail"]
+    assert "storage mismatch" in wrong.json()["detail"]
 
     malformed = client.post(
         "/api/v1/license/validate",
@@ -131,3 +133,39 @@ def test_license_validation_auth_failure_is_clear(monkeypatch, tmp_path):
     )
     assert malformed.status_code == 401
     assert "Invalid Authorization header format" in malformed.json()["detail"]
+
+
+def test_admin_api_key_management_routes(monkeypatch, tmp_path):
+    monkeypatch.setattr("doobielogic.api_v4.ADMIN_API_KEY", "admin-secret")
+    monkeypatch.setattr("doobielogic.api_v4.KEY_STORE", KeyStore(path=tmp_path / "keys.db"))
+    headers = {"Authorization": "Bearer admin-secret"}
+
+    created = client.post(
+        "/api/v1/admin/api-keys/generate",
+        headers=headers,
+        json={
+            "company_name": "Acme",
+            "label": "Buyer Dashboard",
+            "scope": "buyer_dashboard",
+            "expires_at": "2030-01-01",
+            "notes": "integration",
+        },
+    )
+    assert created.status_code == 200
+    payload = created.json()
+    assert payload["raw_key"].startswith("DLB-API-")
+
+    listed = client.get("/api/v1/admin/api-keys", headers=headers)
+    assert listed.status_code == 200
+    assert len(listed.json()["keys"]) == 1
+
+    rec_id = payload["record_id"]
+    updated = client.post(
+        "/api/v1/admin/api-keys/update",
+        headers=headers,
+        json={"record_id": rec_id, "tier_or_scope": "buyer_dashboard,admin"},
+    )
+    assert updated.status_code == 200
+
+    revoked = client.post("/api/v1/admin/api-keys/revoke", headers=headers, json={"record_id": rec_id})
+    assert revoked.status_code == 200

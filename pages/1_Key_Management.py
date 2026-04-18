@@ -6,10 +6,9 @@ from typing import Any
 
 import streamlit as st
 
+from doobielogic.admin_gateway import AdminGateway, AdminGatewayError
 from doobielogic.admin_auth import load_admin_auth_config, verify_admin_credentials
-from doobielogic.key_management import KEY_TYPE_API, KeyStore
 from doobielogic.license_models import ALLOWED_PLAN_TYPES
-from doobielogic.license_store import LicenseStore
 from doobielogic.ui_theme import apply_buyer_dashboard_theme, render_page_hero, section_close, section_open
 
 st.set_page_config(page_title="Key Management", page_icon="🗝️", layout="wide")
@@ -98,8 +97,13 @@ _ensure_session_state()
 if not _admin_authenticated():
     st.stop()
 
-api_key_store = KeyStore(path=os.environ.get("DOOBIE_KEY_DB", "data/key_store.db"))
-license_store = LicenseStore(path=os.environ.get("DOOBIE_LICENSE_STORE", "data/license_store.json"))
+try:
+    gateway = AdminGateway()
+except AdminGatewayError as exc:
+    st.error(f"Storage/backend configuration error: {exc}")
+    st.stop()
+
+st.caption(f"Storage mode: `{gateway.storage_diagnostic().get('mode')}`")
 
 if st.button("Log out", key="admin_logout"):
     st.session_state["admin_authenticated"] = False
@@ -114,7 +118,7 @@ with tab_license:
     st.subheader("Generate Customer License Key")
     st.caption("Buyer Dashboard customers should use license keys. This is the system of record for customer entitlement.")
 
-    customers = license_store.list_customers()
+    customers = gateway.list_customers()
     customer_lookup = {f"{c.company_name} ({c.customer_id})": c for c in customers}
     customer_mode_options = ["Use existing customer", "Create new customer"]
 
@@ -153,7 +157,7 @@ with tab_license:
             if not company_name.strip() or not contact_name.strip() or not contact_email.strip():
                 st.error("Company, contact name, and contact email are required to create a new customer.")
             else:
-                created_customer = license_store.create_customer(
+                created_customer = gateway.create_customer(
                     company_name=company_name,
                     contact_name=contact_name,
                     contact_email=contact_email,
@@ -162,7 +166,7 @@ with tab_license:
                 customer_id = created_customer.customer_id
 
         if customer_id:
-            license_obj = license_store.create_license(
+            license_obj = gateway.create_license(
                 customer_id=customer_id,
                 plan_type=plan_type,
                 expires_at=expiration_date.isoformat() if has_expiration else None,
@@ -202,7 +206,7 @@ with tab_api:
         if not company_name.strip() or not label.strip() or not scope.strip():
             st.error("Company, label, and scope are required.")
         else:
-            generated = api_key_store.create_api_key(
+            generated = gateway.create_api_key(
                 company_name=company_name,
                 label=label,
                 scope=scope,
@@ -224,8 +228,8 @@ with tab_manage:
 
     if manage_type == "Licenses":
         st.subheader("License Inventory")
-        licenses = license_store.list_licenses()
-        customers = {c.customer_id: c for c in license_store.list_customers()}
+        licenses = gateway.list_licenses()
+        customers = {c.customer_id: c for c in gateway.list_customers()}
 
         st.dataframe(
             [
@@ -253,7 +257,7 @@ with tab_manage:
             with col1:
                 if st.button("Revoke license", key=f"revoke_license_{selected_license}"):
                     try:
-                        license_store.revoke_license(selected_license, reason="revoked from key management")
+                        gateway.revoke_license(selected_license, reason="revoked from key management")
                         st.success("License revoked.")
                         st.rerun()
                     except ValueError as exc:
@@ -261,7 +265,7 @@ with tab_manage:
             with col2:
                 if st.button("Reset license", key=f"reset_license_{selected_license}"):
                     try:
-                        reset_result = license_store.reset_license(selected_license, reason="reset from key management")
+                        reset_result = gateway.reset_license(selected_license, reason="reset from key management")
                         st.session_state["latest_license_key"] = {
                             "record_id": reset_result["new"].customer_id,
                             "raw_key": reset_result["new"].license_key,
@@ -276,7 +280,7 @@ with tab_manage:
     else:
         st.subheader("Service API Key Inventory")
         search = st.text_input("Search company / label / scope / notes")
-        records = api_key_store.load_key_records(key_type=KEY_TYPE_API, search=search or None)
+        records = gateway.load_api_key_records(search=search or None)
 
         st.dataframe(
             [
@@ -311,7 +315,7 @@ with tab_manage:
                 save_meta = st.form_submit_button("Save metadata")
 
             if save_meta:
-                api_key_store.update_key_metadata(
+                gateway.update_api_key_metadata(
                     selected_record["id"],
                     label=new_label,
                     tier_or_scope=new_scope,
@@ -324,17 +328,17 @@ with tab_manage:
             col1, col2, col3 = st.columns(3)
             with col1:
                 if st.button("Revoke key", key=f"revoke_api_{selected_record['id']}"):
-                    api_key_store.revoke_key(selected_record["id"])
+                    gateway.revoke_api_key(selected_record["id"])
                     st.success("Key revoked.")
                     st.rerun()
             with col2:
                 if st.button("Enable key", key=f"enable_api_{selected_record['id']}"):
-                    api_key_store.toggle_key_status(selected_record["id"], is_active=True)
+                    gateway.toggle_api_key_status(selected_record["id"], is_active=True)
                     st.success("Key enabled.")
                     st.rerun()
             with col3:
                 if st.button("Disable key", key=f"disable_api_{selected_record['id']}"):
-                    api_key_store.toggle_key_status(selected_record["id"], is_active=False)
+                    gateway.toggle_api_key_status(selected_record["id"], is_active=False)
                     st.success("Key disabled.")
                     st.rerun()
         else:
@@ -360,7 +364,7 @@ with tab_validate:
                 "reason": "missing_key",
             }
         else:
-            st.session_state["latest_license_validation_result"] = license_store.validate_license(license_key)
+            st.session_state["latest_license_validation_result"] = gateway.validate_license(license_key)
 
     license_result = st.session_state.get("latest_license_validation_result")
     if isinstance(license_result, dict):
@@ -377,7 +381,7 @@ with tab_validate:
         check_api = st.form_submit_button("Validate API key")
 
     if check_api:
-        st.session_state["latest_api_validation_result"] = api_key_store.validate_api_key(api_key)
+        st.session_state["latest_api_validation_result"] = gateway.validate_api_key(api_key)
 
     api_result = st.session_state.get("latest_api_validation_result")
     if isinstance(api_result, dict):

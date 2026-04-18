@@ -25,8 +25,13 @@ DoobieLogic is the **license authority**. Buyer Dashboard validates licenses aga
 
 ## Storage
 
-- Backed by local JSON storage (`data/license_store.json` by default).
-- Configurable via `DOOBIE_LICENSE_STORE` environment variable.
+- FastAPI remains the source of truth for license + service-key persistence.
+- License storage defaults to `data/license_store.json` and is configurable via `DOOBIE_LICENSE_STORE`.
+- Service API key storage defaults to `data/key_store.db` and is configurable via `DOOBIE_KEY_DB`.
+- For split deployments, configure Streamlit admin with:
+  - `DOOBIE_ADMIN_API_BASE_URL` (FastAPI base URL)
+  - `ADMIN_API_KEY` (bearer token)
+  - This routes admin create/list/revoke/reset operations through FastAPI endpoints to avoid storage drift.
 
 ## Opaque keys
 
@@ -53,6 +58,12 @@ Keys are generated server-side only, with random segments and plan prefix:
 - `GET /api/v1/admin/licenses`
 - `POST /api/v1/admin/licenses/revoke`
 - `POST /api/v1/admin/licenses/reset`
+- `POST /api/v1/admin/licenses/validate`
+- `POST /api/v1/admin/api-keys/generate`
+- `GET /api/v1/admin/api-keys`
+- `POST /api/v1/admin/api-keys/update`
+- `POST /api/v1/admin/api-keys/status`
+- `POST /api/v1/admin/api-keys/revoke`
 
 ## Auth
 
@@ -84,6 +95,7 @@ curl -X POST http://localhost:8000/api/v1/license/validate \
 ### Error behavior
 
 - Invalid or missing service auth returns HTTP `401` with a clear auth error detail.
+- Invalid service keys include reason detail (for example not found/revoked/expired) and surface storage mismatch hints.
 - Invalid/revoked/expired customer licenses still return normal validation payloads such as:
   - `{"valid": false, "reason": "not_found"}`
   - `{"valid": false, "reason": "revoked"}`

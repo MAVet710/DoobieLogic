@@ -83,6 +83,33 @@ class ApiKeyValidateReq(BaseModel):
     api_key: str
 
 
+class ApiKeyGenerateReq(BaseModel):
+    company_name: str
+    label: str
+    scope: str
+    expires_at: str | None = None
+    notes: str = ""
+
+
+class ApiKeyRecordReq(BaseModel):
+    record_id: str
+
+
+class ApiKeyStatusReq(BaseModel):
+    record_id: str
+    is_active: bool
+
+
+class ApiKeyUpdateReq(BaseModel):
+    record_id: str
+    expires_at: str | None = None
+    notes: str | None = None
+    tier_or_scope: str | None = None
+    label: str | None = None
+    max_users: int | None = None
+    trial: bool | None = None
+
+
 def _parse_bearer(auth_header: str | None) -> str | None:
     if not auth_header:
         return None
@@ -131,7 +158,13 @@ def require_service_auth(
 
     result = KEY_STORE.validate_api_key(safe_key)
     if not result.get("valid"):
-        raise HTTPException(status_code=401, detail="Invalid service API key.")
+        reason = str(result.get("reason") or "invalid")
+        if reason == "not_found":
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid service API key (not found in active key store). This can indicate storage mismatch across deployments.",
+            )
+        raise HTTPException(status_code=401, detail=f"Invalid service API key ({reason}).")
 
     if required_scope:
         scopes = set(result.get("permissions") or [])
@@ -165,6 +198,8 @@ def health() -> dict[str, str]:
         "status": "ok",
         "service": "DoobieLogic API v4",
         "license_validation_route": "/api/v1/license/validate",
+        "license_store": os.environ.get("DOOBIE_LICENSE_STORE", "data/license_store.json"),
+        "key_store": os.environ.get("DOOBIE_KEY_DB", "data/key_store.db"),
     }
 
 
@@ -245,7 +280,10 @@ def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None
 @app.post("/api/v1/license/validate")
 def validate_license(req: LicenseValidateReq, x_api_key: str | None = Header(default=None), authorization: str | None = Header(default=None)) -> dict[str, Any]:
     require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
-    return LICENSE_STORE.validate_license(req.license_key)
+    result = LICENSE_STORE.validate_license(req.license_key)
+    if not result.get("valid") and result.get("reason") == "not_found":
+        result["diagnostic"] = "license_not_found_in_active_store"
+    return result
 
 
 @app.post("/api/v1/keys/validate")
@@ -253,6 +291,15 @@ def validate_key(req: ApiKeyValidateReq, x_validation_token: str | None = Header
     if KEY_VALIDATION_TOKEN and x_validation_token != KEY_VALIDATION_TOKEN:
         raise HTTPException(status_code=401, detail="Unauthorized")
     return KEY_STORE.validate_api_key(req.api_key)
+
+
+@app.post("/api/v1/admin/licenses/validate")
+def admin_validate_license(req: LicenseValidateReq, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin_auth(authorization)
+    result = LICENSE_STORE.validate_license(req.license_key)
+    if not result.get("valid") and result.get("reason") == "not_found":
+        result["diagnostic"] = "license_not_found_in_active_store"
+    return result
 
 
 @app.post("/api/v1/admin/customers")
@@ -309,3 +356,60 @@ def admin_reset_license(req: LicenseResetReq, authorization: str | None = Header
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"old_license": result["old"].to_dict(), "new_license": result["new"].to_dict()}
+
+
+@app.post("/api/v1/admin/api-keys/generate")
+def admin_generate_api_key(req: ApiKeyGenerateReq, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin_auth(authorization)
+    generated = KEY_STORE.create_api_key(
+        company_name=req.company_name,
+        label=req.label,
+        scope=req.scope,
+        expiration_date=None if not req.expires_at else None,
+        notes=req.notes,
+    )
+    if req.expires_at:
+        KEY_STORE.update_key_metadata(generated.record_id, expires_at=req.expires_at)
+    return {"record_id": generated.record_id, "raw_key": generated.raw_key, "key_preview": generated.key_preview}
+
+
+@app.get("/api/v1/admin/api-keys")
+def admin_list_api_keys(
+    authorization: str | None = Header(default=None),
+    search: str | None = None,
+) -> dict[str, Any]:
+    admin_auth(authorization)
+    return {"keys": KEY_STORE.load_key_records(key_type="api", search=search)}
+
+
+@app.post("/api/v1/admin/api-keys/revoke")
+def admin_revoke_api_key(req: ApiKeyRecordReq, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin_auth(authorization)
+    if not KEY_STORE.revoke_key(req.record_id):
+        raise HTTPException(status_code=404, detail="Key not found")
+    return {"ok": True}
+
+
+@app.post("/api/v1/admin/api-keys/status")
+def admin_set_api_key_status(req: ApiKeyStatusReq, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin_auth(authorization)
+    if not KEY_STORE.toggle_key_status(req.record_id, is_active=req.is_active):
+        raise HTTPException(status_code=404, detail="Key not found")
+    return {"ok": True}
+
+
+@app.post("/api/v1/admin/api-keys/update")
+def admin_update_api_key(req: ApiKeyUpdateReq, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin_auth(authorization)
+    updated = KEY_STORE.update_key_metadata(
+        req.record_id,
+        expires_at=req.expires_at,
+        notes=req.notes,
+        tier_or_scope=req.tier_or_scope,
+        label=req.label,
+        max_users=req.max_users,
+        trial=req.trial,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Key not found or no changes provided")
+    return {"ok": True}
