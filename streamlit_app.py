@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import asdict
 from time import perf_counter
 from typing import Any
 
 import streamlit as st
 
-from doobielogic.admin_auth import SESSION_AUTH_KEY, logout_admin, require_admin_auth
+from doobielogic.admin_auth import load_admin_auth_config, verify_admin_credentials
 from doobielogic.buyer_brain import render_buyer_brain_summary, summarize_buyer_opportunities
 from doobielogic.copilot import DoobieCopilot
 from doobielogic.parser import analyze_mapped_data, basic_cannabis_mapping, load_csv_bytes, render_insight_summary
@@ -52,7 +53,7 @@ def _initialize_session_state() -> None:
         "uploaded_file_token": "",
         "persona": "buyer",
         "state": sorted(REGULATION_LINKS.keys())[0],
-        SESSION_AUTH_KEY: False,
+        "admin_authenticated": False,
     }
     for key, default in defaults.items():
         if key not in st.session_state:
@@ -60,6 +61,35 @@ def _initialize_session_state() -> None:
 
 
 
+
+def _render_admin_login_gate() -> bool:
+    config = load_admin_auth_config(st.secrets if hasattr(st, "secrets") else None, os.environ)
+
+    if not config.password_hash:
+        st.error("Admin authentication is not configured: password hash secret is missing.")
+        return False
+
+    if st.session_state.get("admin_authenticated"):
+        return True
+
+    st.markdown("### 🔐 Admin Login")
+    st.caption("Sign in with your admin credentials to access DoobieLogic.")
+    with st.form("app_admin_login"):
+        username = ""
+        if config.username:
+            username = st.text_input("Admin username")
+        password = st.text_input("Admin password", type="password")
+        submitted = st.form_submit_button("Sign in", type="primary")
+
+    if submitted:
+        if verify_admin_credentials(username=username, password=password, config=config):
+            st.session_state["admin_authenticated"] = True
+            st.success("Authenticated.")
+            st.rerun()
+        else:
+            st.error("Invalid admin credentials.")
+
+    return False
 
 def _handle_upload() -> None:
     upload_start = perf_counter()
@@ -147,15 +177,16 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    if not require_admin_auth(form_key="app_admin_login", submit_label="Sign in"):
+    if not _render_admin_login_gate():
         st.stop()
 
     copilot = get_copilot()
 
     sidebar_start = perf_counter()
     st.sidebar.header("Workspace")
-    with st.sidebar:
-        logout_admin(button_key="app_admin_logout")
+    if st.sidebar.button("Log out", key="app_admin_logout"):
+        st.session_state["admin_authenticated"] = False
+        st.rerun()
     persona_options = ["buyer", "retail_ops", "compliance", "extraction", "executive"]
     if st.session_state.persona not in persona_options:
         st.session_state.persona = "buyer"
