@@ -5,7 +5,7 @@ from datetime import date
 
 import streamlit as st
 
-from doobielogic.admin_auth import is_admin_auth_configured, load_admin_auth_config, verify_admin_credentials
+from doobielogic.admin_auth import load_admin_auth_config, verify_admin_credentials
 from doobielogic.key_management import KEY_TYPE_API, KEY_TYPE_LICENSE, KeyStore
 from doobielogic.ui_theme import apply_buyer_dashboard_theme, render_page_hero, section_close, section_open
 
@@ -25,7 +25,7 @@ if "admin_authenticated" not in st.session_state:
 def _admin_authenticated() -> bool:
     config = load_admin_auth_config(st.secrets if hasattr(st, "secrets") else None, os.environ)
 
-    if not is_admin_auth_configured(config):
+    if not config.password_hash:
         st.error("Admin authentication is not configured: password hash secret is missing.")
         return False
 
@@ -34,7 +34,7 @@ def _admin_authenticated() -> bool:
 
     with st.form("admin_login"):
         username = ""
-        if config.username or config.admins:
+        if config.username:
             username = st.text_input("Admin username")
         provided = st.text_input("Admin password", type="password")
         submitted = st.form_submit_button("Unlock Key Management")

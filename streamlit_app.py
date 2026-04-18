@@ -8,7 +8,7 @@ from typing import Any
 
 import streamlit as st
 
-from doobielogic.admin_auth import is_admin_auth_configured, load_admin_auth_config, verify_admin_credentials
+from doobielogic.admin_auth import load_admin_auth_config, verify_admin_credentials
 from doobielogic.buyer_brain import render_buyer_brain_summary, summarize_buyer_opportunities
 from doobielogic.copilot import DoobieCopilot
 from doobielogic.parser import analyze_mapped_data, basic_cannabis_mapping, load_csv_bytes, render_insight_summary
@@ -65,7 +65,7 @@ def _initialize_session_state() -> None:
 def _render_admin_login_gate() -> bool:
     config = load_admin_auth_config(st.secrets if hasattr(st, "secrets") else None, os.environ)
 
-    if not is_admin_auth_configured(config):
+    if not config.password_hash:
         st.error("Admin authentication is not configured: password hash secret is missing.")
         return False
 
@@ -76,7 +76,7 @@ def _render_admin_login_gate() -> bool:
     st.caption("Sign in with your admin credentials to access DoobieLogic.")
     with st.form("app_admin_login"):
         username = ""
-        if config.username or config.admins:
+        if config.username:
             username = st.text_input("Admin username")
         password = st.text_input("Admin password", type="password")
         submitted = st.form_submit_button("Sign in", type="primary")
