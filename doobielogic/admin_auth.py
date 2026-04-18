@@ -1,11 +1,47 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import Mapping
 
 import bcrypt
-import streamlit as st
+
+
+@dataclass(frozen=True)
+class AdminAuthConfig:
+    username: str | None
+    password_hash: str | None
+
+
+SECRET_USERNAME_KEYS: tuple[str, ...] = ("DOOBIE_ADMIN_USERNAME", "ADMIN_USERNAME")
+SECRET_PASSWORD_HASH_KEYS: tuple[str, ...] = ("DOOBIE_ADMIN_PASSWORD_HASH", "ADMIN_PASSWORD_HASH")
+
+
+def _first_present(settings: Mapping[str, str] | None, keys: tuple[str, ...]) -> str | None:
+    if not settings:
+        return None
+    for key in keys:
+        value = settings.get(key)
+        if value is None:
+            continue
+        safe_value = value.strip()
+        if safe_value:
+            return safe_value
+    return None
+
+
+def load_admin_auth_config(
+    secrets: Mapping[str, str] | None,
+    env: Mapping[str, str] | None = None,
+) -> AdminAuthConfig:
+    username = _first_present(secrets, SECRET_USERNAME_KEYS)
+    password_hash = _first_present(secrets, SECRET_PASSWORD_HASH_KEYS)
+
+    if env:
+        username = username or _first_present(env, SECRET_USERNAME_KEYS)
+        password_hash = password_hash or _first_present(env, SECRET_PASSWORD_HASH_KEYS)
+
+    return AdminAuthConfig(username=username, password_hash=password_hash)
+
 
 SECRET_USERNAME_KEYS: tuple[str, ...] = ("DOOBIE_ADMIN_USERNAME", "ADMIN_USERNAME")
 SECRET_PASSWORD_HASH_KEYS: tuple[str, ...] = ("DOOBIE_ADMIN_PASSWORD_HASH", "ADMIN_PASSWORD_HASH")
@@ -101,26 +137,22 @@ def require_admin_auth(*, form_key: str, submit_label: str) -> bool:
         st.error("Admin credentials not configured")
         return False
 
-    if st.session_state.get(SESSION_AUTH_KEY):
-        return True
-
-    with st.form(form_key):
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button(submit_label)
-
-    if submitted:
-        if verify_admin_credentials(username=username, password=password, config=config):
-            st.session_state[SESSION_AUTH_KEY] = True
-            st.success("Authenticated")
-            st.rerun()
-        else:
-            st.error("Invalid credentials")
-
-    return False
+    return verify_admin_credentials(safe_user, safe_password, AdminAuthConfig(username=safe_user, password_hash=stored))
 
 
-def logout_admin(*, button_key: str) -> None:
-    if st.button("Log out", key=button_key):
-        st.session_state[SESSION_AUTH_KEY] = False
-        st.rerun()
+def verify_admin_credentials(username: str, password: str, config: AdminAuthConfig) -> bool:
+    safe_password = password or ""
+    if not safe_password or not config.password_hash:
+        return False
+
+    if config.username:
+        safe_user = (username or "").strip()
+        if not safe_user:
+            return False
+        if safe_user != config.username:
+            return False
+
+    try:
+        return bcrypt.checkpw(safe_password.encode("utf-8"), config.password_hash.encode("utf-8"))
+    except ValueError:
+        return False
