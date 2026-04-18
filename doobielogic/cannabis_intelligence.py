@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -35,16 +36,21 @@ def _avg(items: list[float]) -> float | None:
     return sum(items) / len(items)
 
 
-def load_intel_modules(selected: set[str] | None = None) -> dict[str, Any]:
-    wanted = selected or set(INTEL_FILES.keys())
+@lru_cache(maxsize=16)
+def _load_intel_modules_cached(selected_keys: tuple[str, ...]) -> dict[str, Any]:
     modules: dict[str, Any] = {}
     for key, filename in INTEL_FILES.items():
-        if key not in wanted:
+        if key not in selected_keys:
             continue
         path = INTEL_DIR / filename
         with path.open("r", encoding="utf-8") as f:
             modules[key] = json.load(f)
     return modules
+
+
+def load_intel_modules(selected: set[str] | None = None) -> dict[str, Any]:
+    wanted = tuple(sorted(selected or set(INTEL_FILES.keys())))
+    return _load_intel_modules_cached(wanted)
 
 
 def _build_inventory_summary(data: dict[str, Any]) -> dict[str, Any]:
