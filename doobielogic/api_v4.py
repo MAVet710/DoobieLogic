@@ -12,14 +12,16 @@ from doobielogic.intelligence_v3 import build_intel_v3
 from doobielogic.key_management import KeyStore
 from doobielogic.learning_store_v1 import log_event, summarize_learning
 from doobielogic.license_store import LicenseStore
+from doobielogic.runtime_config import load_fastapi_runtime_config
 
 app = FastAPI(title="DoobieLogic API v4")
 
-API_KEY = os.environ.get("DOOBIE_API_KEY", "")
-ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")
-LICENSE_STORE = LicenseStore(path=os.environ.get("DOOBIE_LICENSE_STORE", "data/license_store.json"))
-KEY_STORE = KeyStore(path=os.environ.get("DOOBIE_KEY_DB", "data/key_store.db"))
-KEY_VALIDATION_TOKEN = os.environ.get("DOOBIE_KEY_VALIDATION_TOKEN", "")
+RUNTIME_CONFIG = load_fastapi_runtime_config(os.environ)
+API_KEY = RUNTIME_CONFIG.service_api_key
+ADMIN_API_KEY = RUNTIME_CONFIG.admin_api_key
+LICENSE_STORE = LicenseStore(path=RUNTIME_CONFIG.storage.license_store_path)
+KEY_STORE = KeyStore(path=RUNTIME_CONFIG.storage.key_db_path)
+KEY_VALIDATION_TOKEN = RUNTIME_CONFIG.key_validation_token
 COPILOT = DoobieCopilot()
 
 

@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from doobielogic.api_v4 import app
 from doobielogic.license_store import LicenseStore
+from doobielogic.runtime_config import load_shared_storage_config
 
 
 client = TestClient(app)
