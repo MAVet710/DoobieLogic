@@ -4,6 +4,7 @@ import os
 
 import streamlit as st
 
+from doobielogic.admin_auth import logout_admin, require_admin_auth
 from doobielogic.license_models import ALLOWED_PLAN_TYPES
 from doobielogic.license_store import LicenseStore
 from doobielogic.ui_theme import apply_buyer_dashboard_theme, render_page_hero, section_close, section_open
@@ -16,7 +17,12 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+if not require_admin_auth(form_key="admin_login", submit_label="Unlock Admin Portal"):
+    st.stop()
+
 store = LicenseStore(path=os.environ.get("DOOBIE_LICENSE_STORE", "data/license_store.json"))
+
+logout_admin(button_key="admin_logout")
 
 section_open()
 left, right = st.columns(2)
