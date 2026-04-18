@@ -30,3 +30,11 @@ def test_ask_with_buyer_brain_non_buyer_stays_cautious():
     res = copilot.ask_with_buyer_brain("ops check", mapped_data=mapped, persona="compliance", state="NY")
     assert "Buyer-specific recommendations are limited" in res.explanation
     assert res.mode == "ops"
+
+
+def test_low_context_paths_return_low_confidence_and_lists():
+    copilot = DoobieCopilot()
+    res = copilot.ask_with_buyer_brain("quick check", mapped_data=None, persona="buyer", state="CA")
+    assert res.confidence == "low"
+    assert isinstance(res.risk_flags, list)
+    assert isinstance(res.inefficiencies, list)
