@@ -6,10 +6,15 @@ from datetime import date
 import streamlit as st
 
 from doobielogic.key_management import KEY_TYPE_API, KEY_TYPE_LICENSE, KeyStore
+from doobielogic.ui_theme import apply_buyer_dashboard_theme, render_page_hero, section_close, section_open
 
 st.set_page_config(page_title="Key Management", page_icon="🗝️", layout="wide")
-st.title("🗝️ Key Management")
-st.caption("Admin-only key generation and lifecycle controls for license and API access.")
+apply_buyer_dashboard_theme()
+render_page_hero("🗝️ Key Management", "Admin-only key generation and lifecycle controls for license and API access.")
+st.markdown(
+    "<span class='dl-pill dl-pill-accent'>Security Console</span><span class='dl-pill dl-pill-warning'>Admin Only</span>",
+    unsafe_allow_html=True,
+)
 
 
 def _admin_authenticated() -> bool:
@@ -48,6 +53,7 @@ tab_license, tab_api, tab_manage, tab_validate = st.tabs(
 )
 
 with tab_license:
+    section_open()
     st.subheader("Generate License Key")
     with st.form("generate_license_key"):
         company_name = st.text_input("Company / Customer Name")
@@ -79,8 +85,10 @@ with tab_license:
                     file_name=f"license_key_{generated.record_id}.txt",
                     mime="text/plain",
                 )
+    section_close()
 
 with tab_api:
+    section_open()
     st.subheader("Generate API Key")
     with st.form("generate_api_key"):
         company_name = st.text_input("Company Name", key="api_company")
@@ -108,8 +116,10 @@ with tab_api:
                     file_name=f"api_key_{generated.record_id}.txt",
                     mime="text/plain",
                 )
+    section_close()
 
 with tab_manage:
+    section_open()
     st.subheader("Key Inventory")
     filter_type = st.selectbox("Filter by key type", options=["all", KEY_TYPE_LICENSE, KEY_TYPE_API])
     search = st.text_input("Search company / label / scope / notes")
@@ -183,8 +193,10 @@ with tab_manage:
                 store.toggle_key_status(selected_record["id"], is_active=False)
                 st.success("Key disabled.")
                 st.rerun()
+    section_close()
 
 with tab_validate:
+    section_open()
     st.subheader("Buyer Dashboard Validation Test")
     with st.form("local_validate"):
         api_key = st.text_input("API key to validate", type="password")
@@ -196,3 +208,4 @@ with tab_validate:
             else:
                 st.error(f"Invalid key: {result.get('reason')}")
             st.json(result)
+    section_close()
