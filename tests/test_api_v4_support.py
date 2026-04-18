@@ -11,6 +11,7 @@ def test_health_public():
     res = client.get('/health')
     assert res.status_code == 200
     assert res.json()['status'] == 'ok'
+    assert res.json()['license_validation_route'] == '/api/v1/license/validate'
 
 
 def test_support_requires_auth_when_configured(monkeypatch):

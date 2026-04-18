@@ -61,7 +61,7 @@ streamlit run streamlit_app.py
 ## API run
 
 ```bash
-uvicorn doobielogic.api:app --reload
+uvicorn doobielogic.api_v4:app --host 0.0.0.0 --port 8000
 ```
 
 ## Buyer Dashboard support API contract
@@ -142,4 +142,33 @@ DoobieLogic now includes an opaque server-side licensing system used by Buyer Da
 - License validation endpoint is `POST /api/v1/license/validate` (service key protected).
 - A lightweight internal admin panel is available via `streamlit_admin.py`.
 
+Validation request supports either service-auth header style:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/license/validate \
+  -H "x-api-key: $DOOBIE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"license_key":"DB-PREM-7K4X-9L2Q-AB8T"}'
+```
+
+```bash
+curl -X POST http://localhost:8000/api/v1/license/validate \
+  -H "Authorization: Bearer $DOOBIE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"license_key":"DB-PREM-7K4X-9L2Q-AB8T"}'
+```
+
 See full documentation in `docs/licensing.md`.
+
+## Deployment requirements for Buyer Dashboard license validation
+
+- Deploy the **FastAPI app** from `doobielogic.api_v4:app` (not Streamlit).
+- Buyer Dashboard license checks must call the FastAPI host:
+  - `POST <FASTAPI_BASE_URL>/api/v1/license/validate`
+- Required environment variables on the FastAPI service:
+  - `DOOBIE_API_KEY` (service authentication key)
+  - `DOOBIE_LICENSE_STORE` (optional; defaults to `data/license_store.json`)
+- Optional admin key:
+  - `ADMIN_API_KEY` (for admin endpoints only)
+- Health probe:
+  - `GET <FASTAPI_BASE_URL>/health`
