@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from doobielogic.copilot import DoobieCopilot
 from doobielogic.evals import apply_low_confidence_fallback
 from doobielogic.intelligence_v3 import build_intel_v3
+from doobielogic.key_management import KeyStore
 from doobielogic.learning_store_v1 import log_event, summarize_learning
 from doobielogic.license_store import LicenseStore
 
@@ -17,6 +18,8 @@ app = FastAPI(title="DoobieLogic API v4")
 API_KEY = os.environ.get("DOOBIE_API_KEY", "")
 ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")
 LICENSE_STORE = LicenseStore(path=os.environ.get("DOOBIE_LICENSE_STORE", "data/license_store.json"))
+KEY_STORE = KeyStore(path=os.environ.get("DOOBIE_KEY_DB", "data/key_store.db"))
+KEY_VALIDATION_TOKEN = os.environ.get("DOOBIE_KEY_VALIDATION_TOKEN", "")
 COPILOT = DoobieCopilot()
 
 
@@ -76,9 +79,22 @@ class LicenseResetReq(BaseModel):
     reason: str | None = None
 
 
-def auth(key: str | None) -> None:
-    if API_KEY and key != API_KEY:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+class ApiKeyValidateReq(BaseModel):
+    api_key: str
+
+
+def auth(key: str | None, required_scope: str | None = None) -> None:
+    if API_KEY and key == API_KEY:
+        return
+    if not API_KEY and not (key or "").strip():
+        return
+    result = KEY_STORE.validate_api_key(key or "")
+    if not result.get("valid"):
+        raise HTTPException(status_code=401, detail=f"Unauthorized: {result.get('reason', 'invalid_key')}")
+    if required_scope:
+        scopes = set(result.get("permissions") or [])
+        if required_scope not in scopes and "admin" not in scopes:
+            raise HTTPException(status_code=403, detail=f"Missing scope: {required_scope}")
 
 
 def _parse_bearer(auth_header: str | None) -> str | None:
@@ -118,52 +134,52 @@ def health() -> dict[str, str]:
 
 @app.post("/buyer/intelligence")
 def buyer(req: BuyerReq, x_api_key: str | None = Header(default=None)):
-    auth(x_api_key)
+    auth(x_api_key, required_scope="buyer_dashboard")
     return build_intel_v3(req.question, req.inventory, "buyer", req.state)
 
 
 @app.post("/extraction/intelligence")
 def extraction(req: ExtractionReq, x_api_key: str | None = Header(default=None)):
-    auth(x_api_key)
+    auth(x_api_key, required_scope="buyer_dashboard")
     return build_intel_v3(req.question, req.run_data, "extraction", req.state)
 
 
 @app.post("/learning/feedback")
 def learning(req: LearnReq, x_api_key: str | None = Header(default=None)):
-    auth(x_api_key)
+    auth(x_api_key, required_scope="buyer_dashboard")
     return log_event(**req.model_dump())
 
 
 @app.get("/learning/summary")
 def learning_summary(x_api_key: str | None = Header(default=None)):
-    auth(x_api_key)
+    auth(x_api_key, required_scope="buyer_dashboard")
     return summarize_learning()
 
 
 @app.post("/api/v1/support/buyer_brief")
 def support_buyer_brief(req: SupportReq, x_api_key: str | None = Header(default=None)) -> dict[str, Any]:
-    auth(x_api_key)
+    auth(x_api_key, required_scope="buyer_dashboard")
     resp = COPILOT.ask_with_buyer_brain(req.question, mapped_data=req.data, persona="buyer", state=req.state)
     return _support_response(resp, mode="buyer")
 
 
 @app.post("/api/v1/support/inventory_check")
 def support_inventory_check(req: SupportReq, x_api_key: str | None = Header(default=None)) -> dict[str, Any]:
-    auth(x_api_key)
+    auth(x_api_key, required_scope="buyer_dashboard")
     resp = COPILOT.ask_with_buyer_brain(req.question, mapped_data=req.data, persona="buyer", state=req.state)
     return _support_response(resp, mode="inventory")
 
 
 @app.post("/api/v1/support/extraction_brief")
 def support_extraction_brief(req: SupportReq, x_api_key: str | None = Header(default=None)) -> dict[str, Any]:
-    auth(x_api_key)
+    auth(x_api_key, required_scope="buyer_dashboard")
     resp = COPILOT.ask_with_operations(req.question, department="extraction", parsed_data=req.data, persona="extraction", state=req.state)
     return _support_response(resp, mode="extraction")
 
 
 @app.post("/api/v1/support/ops_brief")
 def support_ops_brief(req: SupportReq, x_api_key: str | None = Header(default=None)) -> dict[str, Any]:
-    auth(x_api_key)
+    auth(x_api_key, required_scope="buyer_dashboard")
     department = (req.department or "operations").lower()
     resp = COPILOT.ask_with_operations(req.question, department=department, parsed_data=req.data, persona="ops", state=req.state)
     return _support_response(resp, mode="ops")
@@ -171,7 +187,7 @@ def support_ops_brief(req: SupportReq, x_api_key: str | None = Header(default=No
 
 @app.post("/api/v1/support/copilot")
 def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None)) -> dict[str, Any]:
-    auth(x_api_key)
+    auth(x_api_key, required_scope="buyer_dashboard")
     mode = (req.mode or req.persona or "buyer").lower()
 
     if mode in {"buyer", "inventory"}:
@@ -192,8 +208,15 @@ def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None
 
 @app.post("/api/v1/license/validate")
 def validate_license(req: LicenseValidateReq, x_api_key: str | None = Header(default=None)) -> dict[str, Any]:
-    auth(x_api_key)
+    auth(x_api_key, required_scope="buyer_dashboard")
     return LICENSE_STORE.validate_license(req.license_key)
+
+
+@app.post("/api/v1/keys/validate")
+def validate_key(req: ApiKeyValidateReq, x_validation_token: str | None = Header(default=None)) -> dict[str, Any]:
+    if KEY_VALIDATION_TOKEN and x_validation_token != KEY_VALIDATION_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return KEY_STORE.validate_api_key(req.api_key)
 
 
 @app.post("/api/v1/admin/customers")
