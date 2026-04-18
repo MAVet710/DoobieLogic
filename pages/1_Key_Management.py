@@ -5,7 +5,6 @@ from datetime import date
 
 import streamlit as st
 
-from doobielogic.admin_auth import verify_admin_password
 from doobielogic.key_management import KEY_TYPE_API, KEY_TYPE_LICENSE, KeyStore
 
 st.set_page_config(page_title="Key Management", page_icon="🗝️", layout="wide")
@@ -14,36 +13,21 @@ st.caption("Admin-only key generation and lifecycle controls for license and API
 
 
 def _admin_authenticated() -> bool:
+    configured = st.secrets.get("ADMIN_PASSWORD", None) if hasattr(st, "secrets") else None
+    admin_password = configured or os.environ.get("DOOBIE_ADMIN_PASSWORD")
+    if not admin_password:
+        st.error("Admin password is not configured. Set DOOBIE_ADMIN_PASSWORD or Streamlit secret ADMIN_PASSWORD.")
+        return False
+
     if st.session_state.get("admin_authenticated"):
         return True
 
-    admins = {}
-    if hasattr(st, "secrets"):
-        auth_block = st.secrets.get("auth", {})
-        if isinstance(auth_block, dict):
-            maybe_admins = auth_block.get("admins", {})
-            if isinstance(maybe_admins, dict):
-                admins = {str(k): str(v) for k, v in maybe_admins.items()}
-
-    env_user = os.environ.get("DOOBIE_ADMIN_USERNAME")
-    env_password = os.environ.get("DOOBIE_ADMIN_PASSWORD")
-    if env_user and env_password:
-        admins.setdefault(env_user, env_password)
-
-    if not admins:
-        st.error(
-            "No admin credentials configured. Set Streamlit secret [auth.admins] or DOOBIE_ADMIN_USERNAME/DOOBIE_ADMIN_PASSWORD."
-        )
-        return False
-
     with st.form("admin_login"):
-        username = st.text_input("Admin username")
         provided = st.text_input("Admin password", type="password")
         submitted = st.form_submit_button("Unlock Key Management")
     if submitted:
-        if verify_admin_password(username, provided, admins):
+        if provided == admin_password:
             st.session_state.admin_authenticated = True
-            st.session_state.admin_username = username
             st.success("Authenticated.")
             st.rerun()
         else:
@@ -55,11 +39,8 @@ if not _admin_authenticated():
     st.stop()
 
 store = KeyStore(path=os.environ.get("DOOBIE_KEY_DB", "data/key_store.db"))
-if st.session_state.get("admin_username"):
-    st.caption(f"Signed in as: {st.session_state.admin_username}")
 if st.button("Log out", key="admin_logout"):
     st.session_state.admin_authenticated = False
-    st.session_state.admin_username = ""
     st.rerun()
 
 tab_license, tab_api, tab_manage, tab_validate = st.tabs(
