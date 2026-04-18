@@ -141,6 +141,10 @@ DoobieLogic now includes an opaque server-side licensing system used by Buyer Da
 - Admin management endpoints are protected with `Authorization: Bearer <ADMIN_API_KEY>`.
 - License validation endpoint is `POST /api/v1/license/validate` (service key protected).
 - A lightweight internal admin panel is available via `streamlit_admin.py`.
+- For split deployments (Streamlit Cloud + Render), configure Streamlit admin to use FastAPI as the source of truth:
+  - `DOOBIE_ADMIN_API_BASE_URL=https://<your-fastapi-host>`
+  - `ADMIN_API_KEY=<admin bearer token>`
+  - This makes Streamlit key/license operations call FastAPI admin endpoints instead of writing local files.
 
 Validation request supports either service-auth header style:
 
@@ -168,6 +172,7 @@ See full documentation in `docs/licensing.md`.
 - Required environment variables on the FastAPI service:
   - `DOOBIE_API_KEY` (service authentication key)
   - `DOOBIE_LICENSE_STORE` (optional; defaults to `data/license_store.json`)
+  - `DOOBIE_KEY_DB` (optional; defaults to `data/key_store.db`)
 - Optional admin key:
   - `ADMIN_API_KEY` (for admin endpoints only)
 - Health probe:

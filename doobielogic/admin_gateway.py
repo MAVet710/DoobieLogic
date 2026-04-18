@@ -1,0 +1,219 @@
+from __future__ import annotations
+
+import os
+from datetime import date
+from typing import Any
+
+import httpx
+
+from doobielogic.key_management import KEY_TYPE_API, GeneratedKey, KeyStore
+from doobielogic.license_models import Customer, License
+from doobielogic.license_store import LicenseStore
+
+
+class AdminGatewayError(RuntimeError):
+    pass
+
+
+class AdminGateway:
+    """Unified admin storage gateway.
+
+    Modes:
+    - local: read/write local stores (developer mode)
+    - remote_api: write/read through Doobie FastAPI admin endpoints (production-safe split deployments)
+    """
+
+    def __init__(self) -> None:
+        self.remote_base_url = (os.environ.get("DOOBIE_ADMIN_API_BASE_URL") or "").strip().rstrip("/")
+        self.admin_api_key = (os.environ.get("ADMIN_API_KEY") or "").strip()
+        self.timeout_seconds = float(os.environ.get("DOOBIE_ADMIN_API_TIMEOUT", "12"))
+
+        if self.remote_base_url:
+            self.mode = "remote_api"
+            self.license_store: LicenseStore | None = None
+            self.key_store: KeyStore | None = None
+        else:
+            self.mode = "local"
+            self.license_store = LicenseStore(path=os.environ.get("DOOBIE_LICENSE_STORE", "data/license_store.json"))
+            self.key_store = KeyStore(path=os.environ.get("DOOBIE_KEY_DB", "data/key_store.db"))
+
+    def storage_diagnostic(self) -> dict[str, str]:
+        if self.mode == "remote_api":
+            return {"mode": self.mode, "base_url": self.remote_base_url}
+        return {
+            "mode": self.mode,
+            "license_store": os.environ.get("DOOBIE_LICENSE_STORE", "data/license_store.json"),
+            "key_store": os.environ.get("DOOBIE_KEY_DB", "data/key_store.db"),
+        }
+
+    def _admin_headers(self) -> dict[str, str]:
+        if not self.admin_api_key:
+            raise AdminGatewayError("ADMIN_API_KEY is required when DOOBIE_ADMIN_API_BASE_URL is configured.")
+        return {"Authorization": f"Bearer {self.admin_api_key}"}
+
+    def _request(self, method: str, path: str, *, json_payload: dict[str, Any] | None = None) -> Any:
+        url = f"{self.remote_base_url}{path}"
+        try:
+            with httpx.Client(timeout=self.timeout_seconds) as client:
+                resp = client.request(method, url, headers=self._admin_headers(), json=json_payload)
+        except httpx.TimeoutException as exc:
+            raise AdminGatewayError(f"Admin API timeout reaching {url}") from exc
+        except httpx.HTTPError as exc:
+            raise AdminGatewayError(f"Admin API network error reaching {url}: {exc}") from exc
+
+        if resp.status_code >= 400:
+            detail = ""
+            try:
+                body = resp.json()
+                detail = str(body.get("detail") or body)
+            except Exception:
+                detail = resp.text
+            raise AdminGatewayError(f"Admin API request failed ({resp.status_code}) for {path}: {detail}")
+
+        return resp.json()
+
+    # ------- license methods -------
+    def list_customers(self) -> list[Customer]:
+        if self.mode == "local":
+            assert self.license_store is not None
+            return self.license_store.list_customers()
+        payload = self._request("GET", "/api/v1/admin/customers")
+        return [Customer.from_dict(row) for row in payload.get("customers", [])]
+
+    def create_customer(self, company_name: str, contact_name: str, contact_email: str, notes: str = "") -> Customer:
+        if self.mode == "local":
+            assert self.license_store is not None
+            return self.license_store.create_customer(company_name, contact_name, contact_email, notes)
+        payload = self._request(
+            "POST",
+            "/api/v1/admin/customers",
+            json_payload={
+                "company_name": company_name,
+                "contact_name": contact_name,
+                "contact_email": contact_email,
+                "notes": notes,
+            },
+        )
+        return Customer.from_dict(payload)
+
+    def create_license(self, customer_id: str, plan_type: str, expires_at: str | None = None) -> License:
+        if self.mode == "local":
+            assert self.license_store is not None
+            return self.license_store.create_license(customer_id, plan_type, expires_at=expires_at)
+        payload = self._request(
+            "POST",
+            "/api/v1/admin/licenses/generate",
+            json_payload={"customer_id": customer_id, "plan_type": plan_type, "expires_at": expires_at},
+        )
+        return License.from_dict(payload)
+
+    def list_licenses(self) -> list[License]:
+        if self.mode == "local":
+            assert self.license_store is not None
+            return self.license_store.list_licenses()
+        payload = self._request("GET", "/api/v1/admin/licenses")
+        return [License.from_dict(row) for row in payload.get("licenses", [])]
+
+    def revoke_license(self, license_key: str, reason: str | None = None) -> License:
+        if self.mode == "local":
+            assert self.license_store is not None
+            return self.license_store.revoke_license(license_key, reason=reason)
+        payload = self._request(
+            "POST",
+            "/api/v1/admin/licenses/revoke",
+            json_payload={"license_key": license_key, "revoked_reason": reason},
+        )
+        return License.from_dict(payload)
+
+    def reset_license(self, license_key: str, reason: str | None = None) -> dict[str, License]:
+        if self.mode == "local":
+            assert self.license_store is not None
+            return self.license_store.reset_license(license_key, reason=reason)
+        payload = self._request(
+            "POST",
+            "/api/v1/admin/licenses/reset",
+            json_payload={"license_key": license_key, "reason": reason},
+        )
+        return {
+            "old": License.from_dict(payload["old_license"]),
+            "new": License.from_dict(payload["new_license"]),
+        }
+
+    def validate_license(self, license_key: str) -> dict[str, Any]:
+        if self.mode == "local":
+            assert self.license_store is not None
+            return self.license_store.validate_license(license_key)
+        # Admin-side quick check calls admin validation route to avoid service-key requirement.
+        return self._request("POST", "/api/v1/admin/licenses/validate", json_payload={"license_key": license_key})
+
+    # ------- API key methods -------
+    def create_api_key(
+        self,
+        *,
+        company_name: str,
+        label: str,
+        scope: str,
+        expiration_date: date | None,
+        notes: str,
+    ) -> GeneratedKey:
+        if self.mode == "local":
+            assert self.key_store is not None
+            return self.key_store.create_api_key(
+                company_name=company_name,
+                label=label,
+                scope=scope,
+                expiration_date=expiration_date,
+                notes=notes,
+            )
+        payload = self._request(
+            "POST",
+            "/api/v1/admin/api-keys/generate",
+            json_payload={
+                "company_name": company_name,
+                "label": label,
+                "scope": scope,
+                "expires_at": expiration_date.isoformat() if expiration_date else None,
+                "notes": notes,
+            },
+        )
+        return GeneratedKey(record_id=payload["record_id"], raw_key=payload["raw_key"], key_preview=payload["key_preview"])
+
+    def load_api_key_records(self, search: str | None = None) -> list[dict[str, Any]]:
+        if self.mode == "local":
+            assert self.key_store is not None
+            return self.key_store.load_key_records(key_type=KEY_TYPE_API, search=search)
+        qs = f"?search={search}" if search else ""
+        payload = self._request("GET", f"/api/v1/admin/api-keys{qs}")
+        return list(payload.get("keys", []))
+
+    def update_api_key_metadata(self, record_id: str, **kwargs: Any) -> bool:
+        if self.mode == "local":
+            assert self.key_store is not None
+            return self.key_store.update_key_metadata(record_id, **kwargs)
+        payload = {"record_id": record_id, **kwargs}
+        self._request("POST", "/api/v1/admin/api-keys/update", json_payload=payload)
+        return True
+
+    def revoke_api_key(self, record_id: str) -> bool:
+        if self.mode == "local":
+            assert self.key_store is not None
+            return self.key_store.revoke_key(record_id)
+        self._request("POST", "/api/v1/admin/api-keys/revoke", json_payload={"record_id": record_id})
+        return True
+
+    def toggle_api_key_status(self, record_id: str, is_active: bool) -> bool:
+        if self.mode == "local":
+            assert self.key_store is not None
+            return self.key_store.toggle_key_status(record_id, is_active=is_active)
+        self._request(
+            "POST",
+            "/api/v1/admin/api-keys/status",
+            json_payload={"record_id": record_id, "is_active": is_active},
+        )
+        return True
+
+    def validate_api_key(self, api_key: str) -> dict[str, Any]:
+        if self.mode == "local":
+            assert self.key_store is not None
+            return self.key_store.validate_api_key(api_key)
+        return self._request("POST", "/api/v1/keys/validate", json_payload={"api_key": api_key})
