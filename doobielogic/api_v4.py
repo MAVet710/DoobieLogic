@@ -83,20 +83,6 @@ class ApiKeyValidateReq(BaseModel):
     api_key: str
 
 
-def auth(key: str | None, required_scope: str | None = None) -> None:
-    if API_KEY and key == API_KEY:
-        return
-    if not API_KEY and not (key or "").strip():
-        return
-    result = KEY_STORE.validate_api_key(key or "")
-    if not result.get("valid"):
-        raise HTTPException(status_code=401, detail=f"Unauthorized: {result.get('reason', 'invalid_key')}")
-    if required_scope:
-        scopes = set(result.get("permissions") or [])
-        if required_scope not in scopes and "admin" not in scopes:
-            raise HTTPException(status_code=403, detail=f"Missing scope: {required_scope}")
-
-
 def _parse_bearer(auth_header: str | None) -> str | None:
     if not auth_header:
         return None
@@ -111,6 +97,46 @@ def _resolve_service_key(x_api_key: str | None, authorization: str | None) -> st
     if x_api_key and x_api_key.strip():
         return x_api_key.strip()
     return _parse_bearer(authorization)
+
+
+def require_service_auth(
+    *,
+    x_api_key: str | None,
+    authorization: str | None,
+    required_scope: str | None = None,
+) -> None:
+    """Authenticate service access using x-api-key or Authorization Bearer token.
+
+    Supported styles:
+    - x-api-key: <DOOBIE_API_KEY>
+    - Authorization: Bearer <DOOBIE_API_KEY>
+    """
+    if not x_api_key and authorization and _parse_bearer(authorization) is None:
+        raise HTTPException(status_code=401, detail="Invalid Authorization header format. Use 'Bearer <service-key>'.")
+
+    key = _resolve_service_key(x_api_key, authorization)
+    safe_key = (key or "").strip()
+
+    if API_KEY and safe_key == API_KEY:
+        return
+
+    if not API_KEY and not safe_key:
+        return
+
+    if not safe_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing service API key. Provide x-api-key or Authorization: Bearer <service-key>.",
+        )
+
+    result = KEY_STORE.validate_api_key(safe_key)
+    if not result.get("valid"):
+        raise HTTPException(status_code=401, detail="Invalid service API key.")
+
+    if required_scope:
+        scopes = set(result.get("permissions") or [])
+        if required_scope not in scopes and "admin" not in scopes:
+            raise HTTPException(status_code=403, detail=f"Missing scope: {required_scope}")
 
 
 def admin_auth(authorization: str | None) -> None:
@@ -135,57 +161,61 @@ def _support_response(resp, mode: str) -> dict[str, Any]:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "service": "DoobieLogic API v4",
+        "license_validation_route": "/api/v1/license/validate",
+    }
 
 
 @app.post("/buyer/intelligence")
 def buyer(req: BuyerReq, x_api_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
-    auth(_resolve_service_key(x_api_key, authorization), required_scope="buyer_dashboard")
+    require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
     return build_intel_v3(req.question, req.inventory, "buyer", req.state)
 
 
 @app.post("/extraction/intelligence")
 def extraction(req: ExtractionReq, x_api_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
-    auth(_resolve_service_key(x_api_key, authorization), required_scope="buyer_dashboard")
+    require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
     return build_intel_v3(req.question, req.run_data, "extraction", req.state)
 
 
 @app.post("/learning/feedback")
 def learning(req: LearnReq, x_api_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
-    auth(_resolve_service_key(x_api_key, authorization), required_scope="buyer_dashboard")
+    require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
     return log_event(**req.model_dump())
 
 
 @app.get("/learning/summary")
 def learning_summary(x_api_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
-    auth(_resolve_service_key(x_api_key, authorization), required_scope="buyer_dashboard")
+    require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
     return summarize_learning()
 
 
 @app.post("/api/v1/support/buyer_brief")
 def support_buyer_brief(req: SupportReq, x_api_key: str | None = Header(default=None), authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    auth(_resolve_service_key(x_api_key, authorization), required_scope="buyer_dashboard")
+    require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
     resp = COPILOT.ask_with_buyer_brain(req.question, mapped_data=req.data, persona="buyer", state=req.state)
     return _support_response(resp, mode="buyer")
 
 
 @app.post("/api/v1/support/inventory_check")
 def support_inventory_check(req: SupportReq, x_api_key: str | None = Header(default=None), authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    auth(_resolve_service_key(x_api_key, authorization), required_scope="buyer_dashboard")
+    require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
     resp = COPILOT.ask_with_buyer_brain(req.question, mapped_data=req.data, persona="buyer", state=req.state)
     return _support_response(resp, mode="inventory")
 
 
 @app.post("/api/v1/support/extraction_brief")
 def support_extraction_brief(req: SupportReq, x_api_key: str | None = Header(default=None), authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    auth(_resolve_service_key(x_api_key, authorization), required_scope="buyer_dashboard")
+    require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
     resp = COPILOT.ask_with_operations(req.question, department="extraction", parsed_data=req.data, persona="extraction", state=req.state)
     return _support_response(resp, mode="extraction")
 
 
 @app.post("/api/v1/support/ops_brief")
 def support_ops_brief(req: SupportReq, x_api_key: str | None = Header(default=None), authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    auth(_resolve_service_key(x_api_key, authorization), required_scope="buyer_dashboard")
+    require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
     department = (req.department or "operations").lower()
     resp = COPILOT.ask_with_operations(req.question, department=department, parsed_data=req.data, persona="ops", state=req.state)
     return _support_response(resp, mode="ops")
@@ -193,7 +223,7 @@ def support_ops_brief(req: SupportReq, x_api_key: str | None = Header(default=No
 
 @app.post("/api/v1/support/copilot")
 def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None), authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    auth(_resolve_service_key(x_api_key, authorization), required_scope="buyer_dashboard")
+    require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
     mode = (req.mode or req.persona or "buyer").lower()
 
     if mode in {"buyer", "inventory"}:
@@ -214,7 +244,7 @@ def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None
 
 @app.post("/api/v1/license/validate")
 def validate_license(req: LicenseValidateReq, x_api_key: str | None = Header(default=None), authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    auth(_resolve_service_key(x_api_key, authorization), required_scope="buyer_dashboard")
+    require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
     return LICENSE_STORE.validate_license(req.license_key)
 
 
