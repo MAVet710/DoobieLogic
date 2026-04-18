@@ -101,7 +101,6 @@ curl -X POST http://localhost:8000/api/v1/license/validate \
   - `x-api-key: <DOOBIE_API_KEY>`
   - `Authorization: Bearer <DOOBIE_API_KEY>`
 - `DOOBIE_LICENSE_STORE` (optional): path to JSON license store (defaults to `data/license_store.json`).
-- `DOOBIE_KEY_DB` (optional): path to service API key sqlite DB (defaults to `data/key_store.db`).
 - `ADMIN_API_KEY` (optional): needed only for admin endpoints.
 
 ## Reset/Revoke behavior

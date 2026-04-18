@@ -10,7 +10,6 @@ from doobielogic.admin_auth import load_admin_auth_config, verify_admin_credenti
 from doobielogic.key_management import KEY_TYPE_API, KeyStore
 from doobielogic.license_models import ALLOWED_PLAN_TYPES
 from doobielogic.license_store import LicenseStore
-from doobielogic.runtime_config import load_shared_storage_config
 from doobielogic.ui_theme import apply_buyer_dashboard_theme, render_page_hero, section_close, section_open
 
 st.set_page_config(page_title="Key Management", page_icon="🗝️", layout="wide")
@@ -99,9 +98,8 @@ _ensure_session_state()
 if not _admin_authenticated():
     st.stop()
 
-storage = load_shared_storage_config(env=os.environ, secrets=st.secrets if hasattr(st, "secrets") else None)
-api_key_store = KeyStore(path=storage.key_db_path)
-license_store = LicenseStore(path=storage.license_store_path)
+api_key_store = KeyStore(path=os.environ.get("DOOBIE_KEY_DB", "data/key_store.db"))
+license_store = LicenseStore(path=os.environ.get("DOOBIE_LICENSE_STORE", "data/license_store.json"))
 
 if st.button("Log out", key="admin_logout"):
     st.session_state["admin_authenticated"] = False

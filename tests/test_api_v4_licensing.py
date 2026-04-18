@@ -132,27 +132,3 @@ def test_license_validation_auth_failure_is_clear(monkeypatch, tmp_path):
     )
     assert malformed.status_code == 401
     assert "Invalid Authorization header format" in malformed.json()["detail"]
-
-
-def test_admin_and_api_can_share_same_storage_path(monkeypatch, tmp_path):
-    storage = load_shared_storage_config(
-        env={
-            "DOOBIE_LICENSE_STORE": str(tmp_path / "shared_license_store.json"),
-            "DOOBIE_KEY_DB": str(tmp_path / "shared_key_store.db"),
-        }
-    )
-
-    admin_store = LicenseStore(path=storage.license_store_path)
-    customer = admin_store.create_customer("Shared Co", "Alex", "alex@example.com")
-    license_obj = admin_store.create_license(customer.customer_id, "premium")
-
-    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "service-key")
-    monkeypatch.setattr("doobielogic.api_v4.LICENSE_STORE", LicenseStore(path=storage.license_store_path))
-
-    validated = client.post(
-        "/api/v1/license/validate",
-        headers={"x-api-key": "service-key"},
-        json={"license_key": license_obj.license_key},
-    )
-    assert validated.status_code == 200
-    assert validated.json()["valid"] is True
