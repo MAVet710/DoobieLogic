@@ -57,8 +57,52 @@ Keys are generated server-side only, with random segments and plan prefix:
 ## Auth
 
 - Admin endpoints require `Authorization: Bearer <ADMIN_API_KEY>`.
-- Validation endpoint uses the standard Doobie service API key (`DOOBIE_API_KEY`, via `x-api-key`).
-  - Buyer Dashboard compatibility: `Authorization: Bearer <DOOBIE_API_KEY>` is also accepted.
+- Validation endpoint requires the standard Doobie service API key (`DOOBIE_API_KEY`) and accepts either:
+  - `x-api-key: <DOOBIE_API_KEY>`
+  - `Authorization: Bearer <DOOBIE_API_KEY>`
+
+### Validation request examples
+
+`x-api-key` style:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/license/validate \
+  -H "x-api-key: $DOOBIE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"license_key":"DB-PREM-7K4X-9L2Q-AB8T"}'
+```
+
+`Authorization: Bearer` style:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/license/validate \
+  -H "Authorization: Bearer $DOOBIE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"license_key":"DB-PREM-7K4X-9L2Q-AB8T"}'
+```
+
+### Error behavior
+
+- Invalid or missing service auth returns HTTP `401` with a clear auth error detail.
+- Invalid/revoked/expired customer licenses still return normal validation payloads such as:
+  - `{"valid": false, "reason": "not_found"}`
+  - `{"valid": false, "reason": "revoked"}`
+
+## Deployment contract (Buyer Dashboard integration)
+
+- Deploy FastAPI from `doobielogic.api_v4:app`.
+- Health check endpoint: `GET /health`.
+- Validation endpoint: `POST /api/v1/license/validate`.
+- Buyer Dashboard should target the **FastAPI host** (not Streamlit host).
+
+### Required environment variables
+
+- `DOOBIE_API_KEY`: service auth key expected in either:
+  - `x-api-key: <DOOBIE_API_KEY>`
+  - `Authorization: Bearer <DOOBIE_API_KEY>`
+- `DOOBIE_LICENSE_STORE` (optional): path to JSON license store (defaults to `data/license_store.json`).
+- `DOOBIE_KEY_DB` (optional): path to service API key sqlite DB (defaults to `data/key_store.db`).
+- `ADMIN_API_KEY` (optional): needed only for admin endpoints.
 
 ## Reset/Revoke behavior
 

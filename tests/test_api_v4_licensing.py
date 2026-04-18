@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from doobielogic.api_v4 import app
 from doobielogic.license_store import LicenseStore
+from doobielogic.runtime_config import load_shared_storage_config
 
 
 client = TestClient(app)
@@ -72,3 +73,86 @@ def test_end_to_end_admin_and_validation_flow(monkeypatch, tmp_path):
     )
     assert invalid.status_code == 200
     assert invalid.json() == {"valid": False, "reason": "revoked"}
+
+
+def test_license_validation_accepts_authorization_bearer_service_key(monkeypatch, tmp_path):
+    monkeypatch.setattr("doobielogic.api_v4.ADMIN_API_KEY", "admin-secret")
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "service-key")
+    monkeypatch.setattr("doobielogic.api_v4.LICENSE_STORE", LicenseStore(path=tmp_path / "store.json"))
+
+    admin_headers = {"Authorization": "Bearer admin-secret"}
+    customer = client.post(
+        "/api/v1/admin/customers",
+        headers=admin_headers,
+        json={
+            "company_name": "Acme Cannabis",
+            "contact_name": "Pat",
+            "contact_email": "pat@example.com",
+            "notes": "",
+        },
+    )
+    customer_id = customer.json()["customer_id"]
+
+    generated = client.post(
+        "/api/v1/admin/licenses/generate",
+        headers=admin_headers,
+        json={"customer_id": customer_id, "plan_type": "standard"},
+    )
+    license_key = generated.json()["license_key"]
+
+    validated = client.post(
+        "/api/v1/license/validate",
+        headers={"Authorization": "Bearer service-key"},
+        json={"license_key": license_key},
+    )
+    assert validated.status_code == 200
+    assert validated.json()["valid"] is True
+
+
+def test_license_validation_auth_failure_is_clear(monkeypatch, tmp_path):
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "service-key")
+    monkeypatch.setattr("doobielogic.api_v4.LICENSE_STORE", LicenseStore(path=tmp_path / "store.json"))
+
+    missing = client.post("/api/v1/license/validate", json={"license_key": "DB-TRIAL-XXXX-YYYY-ZZZZ"})
+    assert missing.status_code == 401
+    assert "Missing service API key" in missing.json()["detail"]
+
+    wrong = client.post(
+        "/api/v1/license/validate",
+        headers={"Authorization": "Bearer wrong-key"},
+        json={"license_key": "DB-TRIAL-XXXX-YYYY-ZZZZ"},
+    )
+    assert wrong.status_code == 401
+    assert wrong.json()["detail"] == "Invalid service API key."
+
+    malformed = client.post(
+        "/api/v1/license/validate",
+        headers={"Authorization": "Token wrong-key"},
+        json={"license_key": "DB-TRIAL-XXXX-YYYY-ZZZZ"},
+    )
+    assert malformed.status_code == 401
+    assert "Invalid Authorization header format" in malformed.json()["detail"]
+
+
+def test_admin_and_api_can_share_same_storage_path(monkeypatch, tmp_path):
+    storage = load_shared_storage_config(
+        env={
+            "DOOBIE_LICENSE_STORE": str(tmp_path / "shared_license_store.json"),
+            "DOOBIE_KEY_DB": str(tmp_path / "shared_key_store.db"),
+        }
+    )
+
+    admin_store = LicenseStore(path=storage.license_store_path)
+    customer = admin_store.create_customer("Shared Co", "Alex", "alex@example.com")
+    license_obj = admin_store.create_license(customer.customer_id, "premium")
+
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "service-key")
+    monkeypatch.setattr("doobielogic.api_v4.LICENSE_STORE", LicenseStore(path=storage.license_store_path))
+
+    validated = client.post(
+        "/api/v1/license/validate",
+        headers={"x-api-key": "service-key"},
+        json={"license_key": license_obj.license_key},
+    )
+    assert validated.status_code == 200
+    assert validated.json()["valid"] is True

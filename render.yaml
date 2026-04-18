@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: doobielogic-api-v4
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn doobielogic.api_v4:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health

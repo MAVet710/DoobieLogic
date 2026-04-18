@@ -7,6 +7,7 @@ import streamlit as st
 from doobielogic.admin_auth import load_admin_auth_config, verify_admin_credentials
 from doobielogic.license_models import ALLOWED_PLAN_TYPES
 from doobielogic.license_store import LicenseStore
+from doobielogic.runtime_config import load_shared_storage_config
 from doobielogic.ui_theme import apply_buyer_dashboard_theme, render_page_hero, section_close, section_open
 
 st.set_page_config(page_title="DoobieLogic Admin Licensing", page_icon="🔐", layout="wide")
@@ -52,7 +53,8 @@ def _admin_authenticated() -> bool:
 if not _admin_authenticated():
     st.stop()
 
-store = LicenseStore(path=os.environ.get("DOOBIE_LICENSE_STORE", "data/license_store.json"))
+storage = load_shared_storage_config(env=os.environ, secrets=st.secrets if hasattr(st, "secrets") else None)
+store = LicenseStore(path=storage.license_store_path)
 
 if st.button("Log out", key="admin_logout"):
     st.session_state["admin_authenticated"] = False
