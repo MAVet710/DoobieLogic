@@ -4,6 +4,7 @@ import os
 
 import streamlit as st
 
+from doobielogic.admin_auth import load_admin_auth_config, verify_admin_credentials
 from doobielogic.license_models import ALLOWED_PLAN_TYPES
 from doobielogic.license_store import LicenseStore
 from doobielogic.ui_theme import apply_buyer_dashboard_theme, render_page_hero, section_close, section_open
@@ -16,7 +17,46 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+if "admin_authenticated" not in st.session_state:
+    st.session_state["admin_authenticated"] = False
+
+
+def _admin_authenticated() -> bool:
+    config = load_admin_auth_config(st.secrets if hasattr(st, "secrets") else None, os.environ)
+
+    if not config.password_hash:
+        st.error("Admin authentication is not configured: password hash secret is missing.")
+        return False
+
+    if st.session_state.get("admin_authenticated"):
+        return True
+
+    with st.form("admin_login"):
+        username = ""
+        if config.username:
+            username = st.text_input("Admin username")
+        provided = st.text_input("Admin password", type="password")
+        submitted = st.form_submit_button("Unlock Admin Portal")
+
+    if submitted:
+        if verify_admin_credentials(username=username, password=provided, config=config):
+            st.session_state["admin_authenticated"] = True
+            st.success("Authenticated.")
+            st.rerun()
+        else:
+            st.error("Invalid admin credentials.")
+
+    return False
+
+
+if not _admin_authenticated():
+    st.stop()
+
 store = LicenseStore(path=os.environ.get("DOOBIE_LICENSE_STORE", "data/license_store.json"))
+
+if st.button("Log out", key="admin_logout"):
+    st.session_state["admin_authenticated"] = False
+    st.rerun()
 
 section_open()
 left, right = st.columns(2)
