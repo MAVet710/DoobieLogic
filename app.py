@@ -1,7 +1,9 @@
 """Streamlit Cloud fallback entrypoint.
 
-If a platform defaults to `app.py`, importing this module will execute the
-Streamlit UI defined in `streamlit_app.py`.
+If a platform defaults to `app.py`, we explicitly call `streamlit_app.main()`
+so the UI executes on every Streamlit rerun.
 """
 
-from streamlit_app import *  # noqa: F401,F403
+from streamlit_app import main
+
+main()
