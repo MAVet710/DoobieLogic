@@ -74,27 +74,26 @@ with tab_license:
         trial = st.checkbox("Trial license", value=False)
         notes = st.text_area("Notes")
         submitted = st.form_submit_button("Generate License Key")
-        if submitted:
-            if not company_name.strip():
-                st.error("Company name is required.")
-            else:
-                generated = store.create_license_key(
-                    company_name=company_name,
-                    email=contact_email or None,
-                    tier=tier,
-                    expiration_date=expiration if isinstance(expiration, date) else None,
-                    max_users=max_users,
-                    trial=trial,
-                    notes=notes,
-                )
-                st.success("License key created. This is the only time the raw key is shown.")
-                st.code(generated.raw_key)
-                st.download_button(
-                    "Download License Key",
-                    data=f"{generated.raw_key}\n",
-                    file_name=f"license_key_{generated.record_id}.txt",
-                    mime="text/plain",
-                )
+
+    if submitted:
+        if not company_name.strip():
+            st.error("Company name is required.")
+        else:
+            generated = store.create_license_key(
+                company_name=company_name,
+                email=contact_email or None,
+                tier=tier,
+                expiration_date=expiration if isinstance(expiration, date) else None,
+                max_users=max_users,
+                trial=trial,
+                notes=notes,
+            )
+            st.session_state["latest_license_key"] = {
+                "record_id": generated.record_id,
+                "raw_key": generated.raw_key,
+            }
+
+    _render_latest_generated_key("latest_license_key", kind="License")
     section_close()
 
 with tab_api:
@@ -107,25 +106,24 @@ with tab_api:
         expiration = st.date_input("Expiration date (optional)", value=None, key="api_expiration")
         notes = st.text_area("Notes", key="api_notes")
         submitted = st.form_submit_button("Generate API Key")
-        if submitted:
-            if not company_name.strip() or not label.strip() or not scope.strip():
-                st.error("Company, label, and scope are required.")
-            else:
-                generated = store.create_api_key(
-                    company_name=company_name,
-                    label=label,
-                    scope=scope,
-                    expiration_date=expiration if isinstance(expiration, date) else None,
-                    notes=notes,
-                )
-                st.success("API key created. This is the only time the raw key is shown.")
-                st.code(generated.raw_key)
-                st.download_button(
-                    "Download API Key",
-                    data=f"{generated.raw_key}\n",
-                    file_name=f"api_key_{generated.record_id}.txt",
-                    mime="text/plain",
-                )
+
+    if submitted:
+        if not company_name.strip() or not label.strip() or not scope.strip():
+            st.error("Company, label, and scope are required.")
+        else:
+            generated = store.create_api_key(
+                company_name=company_name,
+                label=label,
+                scope=scope,
+                expiration_date=expiration if isinstance(expiration, date) else None,
+                notes=notes,
+            )
+            st.session_state["latest_api_key"] = {
+                "record_id": generated.record_id,
+                "raw_key": generated.raw_key,
+            }
+
+    _render_latest_generated_key("latest_api_key", kind="API")
     section_close()
 
 with tab_manage:
@@ -174,18 +172,19 @@ with tab_manage:
             )
             new_trial = st.checkbox("Trial", value=bool(selected_record["trial"]), disabled=selected_record["key_type"] != KEY_TYPE_LICENSE)
             save_meta = st.form_submit_button("Save metadata")
-            if save_meta:
-                store.update_key_metadata(
-                    selected_record["id"],
-                    label=new_label,
-                    tier_or_scope=new_scope,
-                    expires_at=new_expiration or None,
-                    notes=new_notes,
-                    max_users=new_max_users if selected_record["key_type"] == KEY_TYPE_LICENSE else None,
-                    trial=new_trial if selected_record["key_type"] == KEY_TYPE_LICENSE else None,
-                )
-                st.success("Metadata updated.")
-                st.rerun()
+
+        if save_meta:
+            store.update_key_metadata(
+                selected_record["id"],
+                label=new_label,
+                tier_or_scope=new_scope,
+                expires_at=new_expiration or None,
+                notes=new_notes,
+                max_users=new_max_users if selected_record["key_type"] == KEY_TYPE_LICENSE else None,
+                trial=new_trial if selected_record["key_type"] == KEY_TYPE_LICENSE else None,
+            )
+            st.success("Metadata updated.")
+            st.rerun()
 
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -211,11 +210,16 @@ with tab_validate:
     with st.form("local_validate"):
         api_key = st.text_input("API key to validate", type="password")
         check = st.form_submit_button("Validate API key")
-        if check:
-            result = store.validate_api_key(api_key)
-            if result.get("valid"):
-                st.success("API key is valid.")
-            else:
-                st.error(f"Invalid key: {result.get('reason')}")
-            st.json(result)
+
+    if check:
+        st.session_state["latest_validation_result"] = store.validate_api_key(api_key)
+
+    result = st.session_state.get("latest_validation_result")
+    if result:
+        if result.get("valid"):
+            st.success("API key is valid.")
+        else:
+            st.error(f"Invalid key: {result.get('reason')}")
+        st.json(result)
+
     section_close()

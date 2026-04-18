@@ -43,3 +43,23 @@ def test_validate_key_endpoint(monkeypatch, tmp_path):
     payload = res.json()
     assert payload["valid"] is True
     assert payload["company"] == "Acme Cannabis"
+
+
+def test_support_endpoint_accepts_authorization_bearer_with_generated_key(monkeypatch, tmp_path):
+    store = KeyStore(path=tmp_path / "keys.db")
+    generated = store.create_api_key(
+        company_name="Acme Cannabis",
+        label="Buyer Dashboard",
+        scope="buyer_dashboard",
+        expiration_date=None,
+        notes="",
+    )
+    monkeypatch.setattr("doobielogic.api_v4.KEY_STORE", store)
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
+
+    res = client.post(
+        "/api/v1/support/buyer_brief",
+        headers={"Authorization": f"Bearer {generated.raw_key}"},
+        json={"question": "help", "data": {"days_on_hand": 10}},
+    )
+    assert res.status_code == 200
