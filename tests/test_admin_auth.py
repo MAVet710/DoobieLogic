@@ -1,12 +1,14 @@
 from doobielogic.admin_auth import AdminAuthConfig, load_admin_auth_config, verify_admin_credentials, verify_admin_password
 
 
-def test_verify_admin_password_bcrypt():
-    admins = {
-        "God": "$2b$12$I9nkXct74SUatWQTBRqPcOZ8SQppWtwpZqAVoUukKPDw0/GnhaW6C"
-    }
-    assert verify_admin_password("God", "Major420", admins) is True
-    assert verify_admin_password("God", "wrong", admins) is False
+def test_verify_admin_credentials_bcrypt_success_and_failures():
+    config = AdminAuthConfig(
+        username="God",
+        password_hash="$2b$12$I9nkXct74SUatWQTBRqPcOZ8SQppWtwpZqAVoUukKPDw0/GnhaW6C",
+    )
+    assert verify_admin_credentials("God", "Major420", config) is True
+    assert verify_admin_credentials("wrong", "Major420", config) is False
+    assert verify_admin_credentials("God", "wrong", config) is False
 
 
 def test_verify_admin_credentials_requires_username_when_configured():
