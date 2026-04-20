@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import os
 from datetime import date
-from typing import Any
+from typing import Any, Callable
 
 import streamlit as st
 
-from doobielogic.admin_gateway import AdminGateway, AdminGatewayError
+from doobielogic.admin_gateway import AdminGateway, AdminGatewayError, AdminGatewayHttpError
 from doobielogic.admin_auth import load_admin_auth_config, verify_admin_credentials
 from doobielogic.config import load_doobie_config
 from doobielogic.license_models import ALLOWED_PLAN_TYPES
@@ -104,6 +104,35 @@ def _status_tag(record: dict[str, Any]) -> str:
     return "active"
 
 
+def _render_admin_error(section: str, exc: Exception) -> None:
+    if isinstance(exc, AdminGatewayHttpError):
+        st.warning(
+            f"{section}: admin API request failed.\n"
+            f"Route: `{exc.path}`\n"
+            f"Status: `{exc.status_code}` ({exc.error_category})\n"
+            f"Detail: `{exc.detail or 'n/a'}`"
+        )
+        hints = {
+            "route_missing": "Route exists in this repo but may be missing from the live deployment. Backend may be older than this UI deployment.",
+            "unauthorized": "Admin API key may be invalid or missing in the active configuration.",
+            "forbidden": "Admin credentials are valid but do not have permission for this endpoint.",
+            "server_error": "Backend threw an internal error. Check API logs for stack traces and storage/config issues.",
+            "client_error": "Request was rejected by backend. Verify request payload and backend expectations.",
+            "unknown": "Unexpected API failure. Verify deployment health and network connectivity.",
+        }
+        st.caption(f"Hint: {hints.get(exc.error_category, hints['unknown'])}")
+    else:
+        st.warning(f"{section}: {exc}")
+
+
+def _safe_gateway_call(section: str, fn: Callable[[], Any], *, fallback: Any) -> tuple[Any, Exception | None]:
+    try:
+        return fn(), None
+    except (AdminGatewayError, ValueError) as exc:
+        _render_admin_error(section, exc)
+        return fallback, exc
+
+
 _ensure_session_state()
 
 if not _admin_authenticated():
@@ -118,17 +147,21 @@ except AdminGatewayError as exc:
 config = load_doobie_config()
 diagnostic = gateway.storage_diagnostic()
 mode = diagnostic.get("mode")
-bootstrap = gateway.bootstrap_status()
+bootstrap, bootstrap_error = _safe_gateway_call("Bootstrap status", gateway.bootstrap_status, fallback={})
 bootstrap_routes_available = bool(bootstrap.get("bootstrap_routes_available", True))
 bootstrap_mode = bootstrap.get("bootstrap_mode")
-backend_compatibility = str(bootstrap.get("backend_compatibility") or "ok")
+backend_compatibility = str(bootstrap.get("backend_compatibility") or "unknown")
+
+diagnostics_snapshot = gateway.admin_diagnostics(bootstrap_status=bootstrap if isinstance(bootstrap, dict) else None)
 
 if mode == "remote_api":
     st.info(f"Backend mode: **REMOTE API** (`{diagnostic.get('base_url')}`)")
 else:
     st.success("Backend mode: **LOCAL** (file/db direct access)")
 
-if not bootstrap_routes_available:
+if bootstrap_error:
+    st.info("Bootstrap status is currently unavailable. Other admin sections will still render when possible.")
+elif not bootstrap_routes_available:
     st.warning(
         "Remote API bootstrap routes are not available on the current backend deployment. "
         "The page will continue to load, but initial bootstrap key generation requires a backend redeploy."
@@ -140,11 +173,8 @@ elif bootstrap_mode is False:
 else:
     st.info("Bootstrap status is unavailable. Verify backend compatibility and connectivity.")
 
-if mode == "remote_api" and not bootstrap_routes_available:
-    st.info(
-        "Compatibility note: this Streamlit UI expects `/api/v1/admin/bootstrap/status` and "
-        "`/api/v1/admin/bootstrap/generate`, but the current backend appears older."
-    )
+if diagnostics_snapshot.get("likely_deployment_mismatch"):
+    st.warning("Live API may be running an older build than this UI. Expected admin routes returned 404.")
 
 if config.diagnostics()["warnings"]:
     st.warning("Configuration warnings: " + ", ".join(config.diagnostics()["warnings"]))
@@ -155,6 +185,7 @@ with st.expander("Backend / storage diagnostics", expanded=False):
             "config": config.diagnostics(),
             "gateway": diagnostic,
             "bootstrap": bootstrap,
+            "admin_api_diagnostics": diagnostics_snapshot,
             "ui_diagnostics": {
                 "mode": mode,
                 "bootstrap_routes_available": bootstrap_routes_available,
@@ -165,11 +196,8 @@ with st.expander("Backend / storage diagnostics", expanded=False):
         }
     )
     if st.button("Test connectivity", key="test_connectivity"):
-        try:
-            st.json(gateway.test_connectivity())
-            st.success("Connectivity test succeeded.")
-        except AdminGatewayError as exc:
-            st.error(f"Connectivity test failed: {exc}")
+        probe, _ = _safe_gateway_call("Connectivity test", gateway.test_connectivity, fallback={"ok": False})
+        st.json(probe)
 
 if st.button("Log out", key="admin_logout"):
     st.session_state["admin_authenticated"] = False
@@ -184,7 +212,7 @@ with tab_license:
     st.subheader("Generate Customer License Key")
     st.caption("Customer license keys are used by Buyer Dashboard customers for entitlement and plan validation.")
 
-    customers = gateway.list_customers()
+    customers, customers_error = _safe_gateway_call("Load customers", gateway.list_customers, fallback=[])
     customer_lookup = {f"{c.company_name} ({c.customer_id})": c for c in customers}
     customer_mode_options = ["Use existing customer", "Create new customer"]
 
@@ -215,7 +243,9 @@ with tab_license:
         customer_id: str | None = None
         if mode == "Use existing customer":
             selected_customer = customer_lookup.get(selected_customer_label)
-            if not selected_customer:
+            if customers_error:
+                st.error("Unable to load existing customers. Use 'Create new customer' or fix admin API access.")
+            elif not selected_customer:
                 st.error("No customer selected. Create a customer first.")
             else:
                 customer_id = selected_customer.customer_id
@@ -223,13 +253,20 @@ with tab_license:
             if not company_name.strip() or not contact_name.strip() or not contact_email.strip():
                 st.error("Company, contact name, and contact email are required to create a new customer.")
             else:
-                created_customer = gateway.create_customer(
-                    company_name=company_name,
-                    contact_name=contact_name,
-                    contact_email=contact_email,
-                    notes=notes,
+                created_customer, create_customer_error = _safe_gateway_call(
+                    "Create customer",
+                    lambda: gateway.create_customer(
+                        company_name=company_name,
+                        contact_name=contact_name,
+                        contact_email=contact_email,
+                        notes=notes,
+                    ),
+                    fallback=None,
                 )
-                customer_id = created_customer.customer_id
+                if create_customer_error:
+                    st.error("Could not create customer. License generation aborted.")
+                elif created_customer:
+                    customer_id = created_customer.customer_id
 
         if customer_id:
             try:
@@ -244,7 +281,7 @@ with tab_license:
                 }
                 st.success("License key generated and persisted to the active source of truth.")
             except (ValueError, AdminGatewayError) as exc:
-                st.error(f"License creation failed: {exc}")
+                _render_admin_error("License creation failed", exc)
 
     _render_latest_generated_key("latest_license_key", kind="Customer License Key")
     section_close()
@@ -269,7 +306,7 @@ with tab_api:
                 st.success("Initial admin API key created and persisted.")
                 st.rerun()
             except AdminGatewayError as exc:
-                st.error(f"Bootstrap failed: {exc}")
+                _render_admin_error("Bootstrap failed", exc)
 
     if mode == "remote_api" and not bootstrap_routes_available:
         st.warning("Initial admin-key bootstrap is blocked: backend is missing bootstrap endpoints.")
@@ -308,7 +345,7 @@ with tab_api:
                 }
                 st.success("Admin API key generated in the active backend.")
             except (ValueError, AdminGatewayError) as exc:
-                st.error(f"Admin API key creation failed: {exc}")
+                _render_admin_error("Admin API key creation failed", exc)
 
     _render_latest_generated_key("latest_admin_api_key", kind="Admin API Key")
 
@@ -346,7 +383,7 @@ with tab_api:
                 }
                 st.success("Service API key generated in the active backend.")
             except (ValueError, AdminGatewayError) as exc:
-                st.error(f"Service API key creation failed: {exc}")
+                _render_admin_error("Service API key creation failed", exc)
 
     _render_latest_generated_key("latest_service_api_key", kind="Service API Key")
     section_close()
@@ -357,135 +394,150 @@ with tab_manage:
 
     if manage_type == "Licenses":
         st.subheader("Customer License Inventory")
-        licenses = gateway.list_licenses()
-        customers = {c.customer_id: c for c in gateway.list_customers()}
+        licenses, licenses_error = _safe_gateway_call("Load licenses", gateway.list_licenses, fallback=[])
+        customers, customer_error = _safe_gateway_call("Load customers", gateway.list_customers, fallback=[])
+        customers_by_id = {c.customer_id: c for c in customers}
 
-        st.dataframe(
-            [
-                {
-                    "license_key": lic.license_key,
-                    "customer_id": lic.customer_id,
-                    "company": customers.get(lic.customer_id).company_name if customers.get(lic.customer_id) else "Unknown",
-                    "plan": lic.plan_type,
-                    "status": lic.status,
-                    "issued_at": lic.issued_at,
-                    "expires_at": lic.expires_at,
-                    "last_validated_at": lic.last_validated_at,
-                    "reset_count": lic.reset_count,
-                    "revoked_reason": lic.revoked_reason,
-                }
-                for lic in licenses
-            ],
-            use_container_width=True,
-            hide_index=True,
-        )
-
-        if licenses:
-            selected_license = st.selectbox("Select license", options=[lic.license_key for lic in licenses])
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Revoke license", key=f"revoke_license_{selected_license}"):
-                    try:
-                        gateway.revoke_license(selected_license, reason="revoked from key management")
-                        st.success("License revoked.")
-                        st.rerun()
-                    except ValueError as exc:
-                        st.error(str(exc))
-            with col2:
-                if st.button("Reset license", key=f"reset_license_{selected_license}"):
-                    try:
-                        reset_result = gateway.reset_license(selected_license, reason="reset from key management")
-                        st.session_state["latest_license_key"] = {
-                            "record_id": reset_result["new"].customer_id,
-                            "raw_key": reset_result["new"].license_key,
-                        }
-                        st.success("License reset complete. New license key generated.")
-                        st.rerun()
-                    except ValueError as exc:
-                        st.error(str(exc))
+        if licenses_error and customer_error:
+            st.info("License management is temporarily unavailable because required admin routes failed.")
         else:
-            st.info("No licenses found. Generate a license first.")
+            st.dataframe(
+                [
+                    {
+                        "license_key": lic.license_key,
+                        "customer_id": lic.customer_id,
+                        "company": customers_by_id.get(lic.customer_id).company_name if customers_by_id.get(lic.customer_id) else "Unknown",
+                        "plan": lic.plan_type,
+                        "status": lic.status,
+                        "issued_at": lic.issued_at,
+                        "expires_at": lic.expires_at,
+                        "last_validated_at": lic.last_validated_at,
+                        "reset_count": lic.reset_count,
+                        "revoked_reason": lic.revoked_reason,
+                    }
+                    for lic in licenses
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            if licenses:
+                selected_license = st.selectbox("Select license", options=[lic.license_key for lic in licenses])
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Revoke license", key=f"revoke_license_{selected_license}"):
+                        try:
+                            gateway.revoke_license(selected_license, reason="revoked from key management")
+                            st.success("License revoked.")
+                            st.rerun()
+                        except (ValueError, AdminGatewayError) as exc:
+                            _render_admin_error("Revoke license failed", exc)
+                with col2:
+                    if st.button("Reset license", key=f"reset_license_{selected_license}"):
+                        try:
+                            reset_result = gateway.reset_license(selected_license, reason="reset from key management")
+                            st.session_state["latest_license_key"] = {
+                                "record_id": reset_result["new"].customer_id,
+                                "raw_key": reset_result["new"].license_key,
+                            }
+                            st.success("License reset complete. New license key generated.")
+                            st.rerun()
+                        except (ValueError, AdminGatewayError) as exc:
+                            _render_admin_error("Reset license failed", exc)
+            else:
+                st.info("No licenses found. Generate a license first.")
 
     else:
         st.subheader("API Key Inventory (Persistent)")
         search = st.text_input("Search company / label / scope / notes")
-        service_records = gateway.load_api_key_records(search=search or None)
-        admin_records = gateway.load_admin_api_key_records(search=search or None)
+        service_records, service_error = _safe_gateway_call(
+            "Load service API keys",
+            lambda: gateway.load_api_key_records(search=search or None),
+            fallback=[],
+        )
+        admin_records, admin_error = _safe_gateway_call(
+            "Load admin API keys",
+            lambda: gateway.load_admin_api_key_records(search=search or None),
+            fallback=[],
+        )
         records = admin_records + service_records
 
-        st.dataframe(
-            [
-                {
-                    "id": r["id"],
-                    "key_type": "admin" if r.get("key_role") == "admin" else "service",
-                    "bootstrap": "yes" if int(r.get("is_bootstrap") or 0) == 1 else "no",
-                    "company": r["company_name"],
-                    "label": r["label"],
-                    "scope": r["tier_or_scope"],
-                    "created_at": r["created_at"],
-                    "expires_at": r["expires_at"],
-                    "status": _status_tag(r),
-                    "preview": f"...{r['key_preview']}",
-                }
-                for r in records
-            ],
-            use_container_width=True,
-            hide_index=True,
-        )
-
-        if records:
-            selectable = {f"{r['id']} | {r['label']} | ...{r['key_preview']}": r for r in records}
-            selected = st.selectbox("Select key for actions", options=list(selectable.keys()))
-            selected_record = selectable[selected]
-
-            with st.form("edit_api_key"):
-                new_label = st.text_input("Label", value=selected_record["label"])
-                new_scope = st.text_input("Scope", value=selected_record["tier_or_scope"])
-                new_expiration = st.text_input("Expires At (ISO8601 or YYYY-MM-DD)", value=selected_record["expires_at"] or "")
-                new_notes = st.text_area("Notes", value=selected_record["notes"] or "")
-                save_meta = st.form_submit_button("Save metadata")
-
-            if save_meta:
-                try:
-                    gateway.update_api_key_metadata(
-                        selected_record["id"],
-                        label=new_label,
-                        tier_or_scope=new_scope,
-                        expires_at=new_expiration or None,
-                        notes=new_notes,
-                    )
-                    st.success("Metadata updated.")
-                    st.rerun()
-                except (ValueError, AdminGatewayError) as exc:
-                    st.error(f"Failed to update metadata: {exc}")
-
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                if st.button("Revoke key", key=f"revoke_api_{selected_record['id']}"):
-                    try:
-                        gateway.revoke_api_key(selected_record["id"])
-                        st.success("Key revoked.")
-                        st.rerun()
-                    except (ValueError, AdminGatewayError) as exc:
-                        st.error(f"Failed to revoke key: {exc}")
-            with col2:
-                if st.button("Enable key", key=f"enable_api_{selected_record['id']}"):
-                    try:
-                        gateway.toggle_api_key_status(selected_record["id"], is_active=True)
-                        st.success("Key enabled.")
-                        st.rerun()
-                    except (ValueError, AdminGatewayError) as exc:
-                        st.error(f"Failed to enable key: {exc}")
-            with col3:
-                if st.button("Disable key", key=f"disable_api_{selected_record['id']}"):
-                    try:
-                        gateway.toggle_api_key_status(selected_record["id"], is_active=False)
-                        st.success("Key disabled.")
-                        st.rerun()
-                    except (ValueError, AdminGatewayError) as exc:
-                        st.error(f"Failed to disable key: {exc}")
+        if service_error and admin_error:
+            st.info("API key inventory is temporarily unavailable because admin routes failed.")
         else:
-            st.info("No API keys found. Generate an API key first.")
+            st.dataframe(
+                [
+                    {
+                        "id": r["id"],
+                        "key_type": "admin" if r.get("key_role") == "admin" else "service",
+                        "bootstrap": "yes" if int(r.get("is_bootstrap") or 0) == 1 else "no",
+                        "company": r["company_name"],
+                        "label": r["label"],
+                        "scope": r["tier_or_scope"],
+                        "created_at": r["created_at"],
+                        "expires_at": r["expires_at"],
+                        "status": _status_tag(r),
+                        "preview": f"...{r['key_preview']}",
+                    }
+                    for r in records
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            if records:
+                selectable = {f"{r['id']} | {r['label']} | ...{r['key_preview']}": r for r in records}
+                selected = st.selectbox("Select key for actions", options=list(selectable.keys()))
+                selected_record = selectable[selected]
+
+                with st.form("edit_api_key"):
+                    new_label = st.text_input("Label", value=selected_record["label"])
+                    new_scope = st.text_input("Scope", value=selected_record["tier_or_scope"])
+                    new_expiration = st.text_input("Expires At (ISO8601 or YYYY-MM-DD)", value=selected_record["expires_at"] or "")
+                    new_notes = st.text_area("Notes", value=selected_record["notes"] or "")
+                    save_meta = st.form_submit_button("Save metadata")
+
+                if save_meta:
+                    try:
+                        gateway.update_api_key_metadata(
+                            selected_record["id"],
+                            label=new_label,
+                            tier_or_scope=new_scope,
+                            expires_at=new_expiration or None,
+                            notes=new_notes,
+                        )
+                        st.success("Metadata updated.")
+                        st.rerun()
+                    except (ValueError, AdminGatewayError) as exc:
+                        _render_admin_error("Failed to update metadata", exc)
+
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    if st.button("Revoke key", key=f"revoke_api_{selected_record['id']}"):
+                        try:
+                            gateway.revoke_api_key(selected_record["id"])
+                            st.success("Key revoked.")
+                            st.rerun()
+                        except (ValueError, AdminGatewayError) as exc:
+                            _render_admin_error("Failed to revoke key", exc)
+                with col2:
+                    if st.button("Enable key", key=f"enable_api_{selected_record['id']}"):
+                        try:
+                            gateway.toggle_api_key_status(selected_record["id"], is_active=True)
+                            st.success("Key enabled.")
+                            st.rerun()
+                        except (ValueError, AdminGatewayError) as exc:
+                            _render_admin_error("Failed to enable key", exc)
+                with col3:
+                    if st.button("Disable key", key=f"disable_api_{selected_record['id']}"):
+                        try:
+                            gateway.toggle_api_key_status(selected_record["id"], is_active=False)
+                            st.success("Key disabled.")
+                            st.rerun()
+                        except (ValueError, AdminGatewayError) as exc:
+                            _render_admin_error("Failed to disable key", exc)
+            else:
+                st.info("No API keys found. Generate an API key first.")
 
     section_close()
 
