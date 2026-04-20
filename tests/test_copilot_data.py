@@ -29,7 +29,7 @@ def test_ask_with_buyer_brain_non_buyer_stays_cautious():
     mapped = {"quantity": [1, 2], "inventory": [10, 5]}
     res = copilot.ask_with_buyer_brain("ops check", mapped_data=mapped, persona="compliance", state="NY")
     assert "Buyer-specific recommendations are limited" in res.explanation
-    assert res.mode == "ops"
+    assert res.mode == "compliance"
 
 
 def test_low_context_paths_return_low_confidence_and_lists():

@@ -82,17 +82,15 @@ class DoobieCopilot:
         return safe if safe in PERSONA_GUIDANCE else "buyer"
 
     def _intel_mode(self, mode: str) -> str:
-        if mode in {"buyer", "inventory"}:
-            return "buyer"
-        if mode in {"ops", "copilot", "executive", "retail_ops", "cultivation", "kitchen", "packaging"}:
-            return "executive"
-        return mode
+        if mode in {"buyer", "inventory", "extraction", "compliance", "executive", "financial"}:
+            return mode
+        if mode in {"retail_ops", "cultivation", "kitchen", "packaging", "ops", "copilot"}:
+            return mode
+        return "executive"
 
     def _builder_mode(self, mode: str) -> str:
         if mode in RESPONSE_BUILDERS:
             return mode
-        if mode in {"retail_ops", "cultivation", "kitchen", "packaging"}:
-            return "ops"
         return "copilot"
 
     def _compose_response(
@@ -142,6 +140,20 @@ class DoobieCopilot:
                 inefficiencies.append("Failed batches are constraining throughput and margin capture.")
             if margin_per_g is not None and margin_per_g < 0:
                 inefficiencies.append("Negative margin per gram indicates run economics are underwater.")
+        if mode == "retail_ops":
+            if self._to_float(data.get("conversion_rate")) is not None and float(data.get("conversion_rate")) < 0.18:
+                inefficiencies.append("Conversion is below target and likely tied to floor execution or availability gaps.")
+            if self._to_float(data.get("queue_wait_minutes")) is not None and float(data.get("queue_wait_minutes")) > 8:
+                inefficiencies.append("Queue wait time is above service-level target and reduces throughput.")
+        if mode == "cultivation":
+            if sum(1 for x in data.get("microbial_risk_flag", []) if bool(x)) > 0:
+                inefficiencies.append("Microbial flags indicate cultivation control drift and release delays.")
+        if mode == "kitchen":
+            if sum(1 for x in data.get("rework_flag", []) if bool(x)) > 0:
+                inefficiencies.append("Kitchen rework is consuming capacity and delaying release.")
+        if mode == "packaging":
+            if sum(1 for x in data.get("label_error_flag", []) if bool(x)) > 0:
+                inefficiencies.append("Packaging label errors are driving rework and compliance exposure.")
         return inefficiencies
 
     def _detect_mode_risks(self, mode: str, context: dict[str, Any], data: dict[str, Any], insights: dict[str, Any] | None = None) -> list[str]:
@@ -168,6 +180,26 @@ class DoobieCopilot:
                 risks.append("negative margin")
             if data.get("unmapped_output_type"):
                 risks.append("unmapped output type")
+        if mode == "retail_ops":
+            if self._to_float(data.get("conversion_rate")) is not None and float(data.get("conversion_rate")) < 0.18:
+                risks.append("low conversion rate")
+            if self._to_float(data.get("discount_rate")) is not None and float(data.get("discount_rate")) > 0.18:
+                risks.append("discount overuse risk")
+        if mode == "cultivation":
+            if sum(1 for x in data.get("microbial_risk_flag", []) if bool(x)) > 0:
+                risks.append("microbial flags")
+            if sum(1 for x in data.get("moisture_risk_flag", []) if bool(x)) > 0:
+                risks.append("moisture instability")
+        if mode == "kitchen":
+            if sum(1 for x in data.get("sanitation_gap_flag", []) if bool(x)) > 0:
+                risks.append("sanitation gap")
+            if self._to_float(data.get("dosage_variance_pct")) is not None and float(data.get("dosage_variance_pct")) > 10:
+                risks.append("dosage variance")
+        if mode == "packaging":
+            if sum(1 for x in data.get("label_error_flag", []) if bool(x)) > 0:
+                risks.append("label error risk")
+            if any(abs(float(x)) > 2 for x in data.get("reconciliation_variance", []) if x is not None):
+                risks.append("reconciliation variance")
 
         deduped: list[str] = []
         for risk in risks:
@@ -191,7 +223,7 @@ class DoobieCopilot:
         grounded = build_grounded_summary(question=question, state=safe_state, module=MODULE_MAP[safe_persona])
         knowledge = search_department_knowledge(safe_persona if safe_persona != "ops" else "executive", question, limit=5)
         context_mode = "ops" if safe_persona in {"ops", "executive"} else safe_persona
-        context = build_doobie_context(data={}, mode=self._intel_mode(context_mode))
+        context = build_doobie_context(data={}, mode=self._intel_mode(context_mode), question=question)
 
         confidence = infer_confidence(
             has_structured_data=False,
@@ -231,10 +263,20 @@ class DoobieCopilot:
     ) -> CopilotResponse:
         safe_persona = self._normalize_persona(persona)
         safe_state = state.upper() if isinstance(state, str) and state.strip() else None
-        outputs = build_operations_outputs(parsed_data=parsed_data, department=department, state=safe_state)
+        dept = (department or "").lower()
+        outputs = build_operations_outputs(parsed_data=parsed_data, department=dept, state=safe_state)
         grounded = build_grounded_summary(question=question, state=safe_state, module=MODULE_MAP.get(safe_persona, "operations"))
-        context_mode = "extraction" if department == "extraction" else "ops"
-        context = build_doobie_context(data=parsed_data or {}, mode=self._intel_mode(context_mode))
+        dept_mode_map = {
+            "retail_ops": "retail_ops",
+            "buyer": "retail_ops",
+            "cultivation": "cultivation",
+            "extraction": "extraction",
+            "kitchen": "kitchen",
+            "packaging": "packaging",
+            "compliance": "compliance",
+        }
+        context_mode = dept_mode_map.get(dept, safe_persona if safe_persona in dept_mode_map.values() else "executive")
+        context = build_doobie_context(data=parsed_data or {}, mode=self._intel_mode(context_mode), question=question)
 
         has_data = bool(parsed_data)
         has_rules = bool(outputs.get("knowledge_hits")) or bool(outputs.get("recommendations"))
@@ -251,11 +293,11 @@ class DoobieCopilot:
             [
                 f"Role lens: {PERSONA_GUIDANCE.get(safe_persona, PERSONA_GUIDANCE['executive'])}",
                 outputs["knowledge_summary"],
-                render_operations_summary(outputs, department=department),
+                render_operations_summary(outputs, department=dept),
                 "Grounded source context:\n" + grounded["answer"],
             ]
         )
-        answer = f"{department.title()} operations brief generated with {confidence} confidence."
+        answer = f"{dept.title()} operations brief generated with {confidence} confidence."
         risks = self._detect_mode_risks(context_mode, context, data=parsed_data or {})
         inefficiencies = self._extract_inefficiencies(context_mode, data=parsed_data or {})
 
@@ -283,8 +325,8 @@ class DoobieCopilot:
 
         data_insights = analyze_mapped_data(mapped_data or {}) if mapped_data else {}
         data_summary = render_insight_summary(data_insights)
-        context_mode = "inventory" if safe_persona == "buyer" else "ops"
-        context = build_doobie_context(data=mapped_data or {}, mode=self._intel_mode(context_mode))
+        context_mode = "inventory" if safe_persona == "buyer" else (safe_persona if safe_persona in {"retail_ops", "cultivation", "kitchen", "packaging", "compliance", "executive", "extraction"} else "ops")
+        context = build_doobie_context(data=mapped_data or {}, mode=self._intel_mode(context_mode), question=question)
 
         answer_sections = [
             f"Role lens: {PERSONA_GUIDANCE[safe_persona]}",
@@ -351,7 +393,7 @@ class DoobieCopilot:
         sources = list(dict.fromkeys((analysis.regulation_links or {}).values())) + grounded.get("sources", [])
 
         context_mode = "inventory" if safe_persona == "buyer" else safe_persona
-        context = build_doobie_context(data=payload.model_dump(), mode=self._intel_mode(context_mode))
+        context = build_doobie_context(data=payload.model_dump(), mode=self._intel_mode(context_mode), question="inventory risk promotions compliance assortment pricing days on hand")
         risks = self._detect_mode_risks(context_mode, context, data=payload.model_dump())
         inefficiencies = self._extract_inefficiencies(context_mode, data=payload.model_dump())
         return self._compose_response(
@@ -395,9 +437,25 @@ class DoobieCopilot:
                 "Prioritize recurring cross-functional risk themes over one-off noise.",
                 "Use concise risk-impact-action cadence for decision reviews.",
             ],
-            "retail_ops": ["Tighten staffing to demand windows.", "Simplify category mix and price ladders."],
-            "cultivation": ["Audit room-level yield variance.", "Escalate repeated microbial flags."],
-            "kitchen": ["Audit dosage drift by batch.", "Reduce sanitation-related hold events."],
-            "packaging": ["Escalate repeat labeling failures.", "Track reconciliation variance by shift."],
+            "retail_ops": [
+                "Schedule labor to peak demand windows and pre-stage backup coverage for queue spikes.",
+                "Protect conversion by prioritizing shelf/menu availability for top-velocity SKUs.",
+                "Use attach coaching and discount discipline to improve ATV without margin erosion.",
+            ],
+            "cultivation": [
+                "Track canopy productivity by room/cultivar and triage persistent underperformers.",
+                "Stabilize harvest cadence and dry-room controls before expanding plant count.",
+                "Segment biomass early for premium, extraction, and trim pathways.",
+            ],
+            "kitchen": [
+                "Tighten infusion homogeneity checks and in-process potency verification.",
+                "Reduce hold/rework by enforcing sanitation and allergen changeover controls.",
+                "Synchronize cooling and packaging handoff slots to avoid batch aging delays.",
+            ],
+            "packaging": [
+                "Run shift-start label preflight and quarantine any mismatched templates immediately.",
+                "Balance lines around bottleneck stations and track first-pass yield by SKU.",
+                "Escalate reconciliation variance and require supervisor signoff on corrective counts.",
+            ],
         }
         return bank.get(persona, bank["buyer"])

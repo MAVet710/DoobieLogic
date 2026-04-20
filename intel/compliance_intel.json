@@ -1,6 +1,18 @@
 {
   "module": "compliance_intel",
-  "version": "1.0",
+  "version": "1.1",
+  "scope_note": "Conceptual framework only. State-specific statutory requirements are intentionally not hardcoded.",
+  "risk_tiers": {
+    "tier_1_critical": ["traceability_break", "labeling_misstatement", "unauthorized_transfer", "failed_chain_of_custody"],
+    "tier_2_major": ["batch_record_gap", "storage_control_failure", "open_capa_aging", "receiving_document_mismatch"],
+    "tier_3_minor": ["late_document_upload", "isolated_training_lapse"]
+  },
+  "documentation_expectations": {
+    "receiving": ["manifest", "package_id_verification", "quantity_reconciliation", "receiver_signoff"],
+    "production": ["batch_record", "input_output_reconciliation", "hold_release_status", "qc_results"],
+    "transfer": ["origin_destination_match", "manifest_completeness", "chain_of_custody_signatures"],
+    "storage": ["location_tracking", "access_control", "segregation_for_hold_or_reject"]
+  },
   "metrc_basics": {
     "package_ids": {
       "definition": "Unique inventory/package tags used to identify cannabis lots and finished goods.",
@@ -16,18 +28,21 @@
     }
   },
   "high_level_rules": [
-    {
-      "id": "traceability_end_to_end",
-      "principle": "Every inventory movement and transformation should be reconstructable from source to sale."
-    },
-    {
-      "id": "stage_tracking_required",
-      "principle": "Operational stages (receive, process, package, transfer, sell) must have attributable records."
-    },
-    {
-      "id": "exceptions_need_resolution",
-      "principle": "Any reconciliation gap or data mismatch should trigger a documented corrective workflow."
-    }
+    {"id": "traceability_end_to_end", "principle": "Every inventory movement and transformation should be reconstructable from source to sale."},
+    {"id": "stage_tracking_required", "principle": "Operational stages (receive, process, package, transfer, sell) must have attributable records."},
+    {"id": "exceptions_need_resolution", "principle": "Any reconciliation gap or data mismatch should trigger a documented corrective workflow."},
+    {"id": "variance_requires_escalation", "principle": "Inventory or document variance above policy threshold requires manager escalation and CAPA linkage."}
   ],
-  "scope_note": "Conceptual framework only. State-specific statutory requirements are intentionally not hardcoded."
+  "audit_focus_areas": [
+    "label_and_packaging_accuracy",
+    "intake_and_receiving_controls",
+    "guest_vendor_check_in_records",
+    "storage_segregation_for_hold_reject",
+    "transfer_manifest_completeness"
+  ],
+  "state_overlay_model": {
+    "conceptual_layer": "Use universal controls first: traceability, records integrity, and accountability.",
+    "state_specific_layer": "Apply state statutes, rule citations, and local enforcement guidance as overrides.",
+    "guidance": "When uncertain, present conservative operational controls and refer user to official state authority links."
+  }
 }
