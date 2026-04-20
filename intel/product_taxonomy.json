@@ -1,14 +1,16 @@
 {
   "module": "product_taxonomy",
-  "version": "1.0",
+  "version": "1.1",
   "categories": {
     "flower": {
       "subtypes": ["whole_flower", "smalls", "shake"],
-      "forms": ["bulk", "eighth", "quarter", "half_ounce", "ounce"]
+      "forms": ["bulk", "gram", "eighth", "quarter", "half_ounce", "ounce"],
+      "strain_classification": ["indica", "sativa", "hybrid", "cultivar_specific"]
     },
     "pre_rolls": {
       "subtypes": ["single", "multi_pack", "infused_pre_roll"],
-      "inputs": ["ground_flower", "flower_plus_concentrate"]
+      "inputs": ["ground_flower", "flower_plus_concentrate"],
+      "edge_cases": ["hemp_wrap_infused", "dual_chamber_infusion"]
     },
     "concentrates": {
       "subtypes": {
@@ -17,26 +19,42 @@
         "shatter": {"source": "hydrocarbon", "texture": "glass_like"},
         "diamonds": {"source": "high_thca_fraction", "paired_with": "terp_sauce"},
         "rosin": {"source": "solventless_press", "input": "flower_or_hash"},
-        "hash": {"source": "ice_water_or_dry_sift", "grade": "varies"}
+        "hash": {"source": "ice_water_or_dry_sift", "grade": "varies"},
+        "distillate": {"source": "refined_extract", "primary_use": "vape_edible_tincture_input"}
       }
     },
     "vapes": {
-      "subtypes": ["510_cart", "all_in_one", "pod"],
-      "oil_types": ["distillate", "live_resin_oil", "rosin_oil", "co2_oil"]
+      "subtypes": ["510_cart", "all_in_one", "disposable", "pod"],
+      "oil_types": ["distillate", "live_resin_oil", "rosin_oil", "co2_oil"],
+      "disposable_classification": {
+        "all_in_one": "integrated_battery_and_reservoir",
+        "replaceable_pod": "device_plus_interchangeable_pod"
+      }
     },
     "edibles": {
       "subtypes": ["gummies", "chocolates", "baked_goods", "beverages"],
-      "inputs": ["distillate", "full_spectrum_oil", "nano_emulsion"]
+      "inputs": ["distillate", "full_spectrum_oil", "nano_emulsion"],
+      "serving_logic": {
+        "single_serving": "unit_dose_equals_labeled_serving",
+        "multi_serving": "label_must_define_servings_and_total_thc"
+      }
     },
     "tinctures": {
       "subtypes": ["alcohol_based", "mct_oil_based", "glycerin_based"],
-      "inputs": ["distillate", "full_spectrum_extract"]
+      "inputs": ["distillate", "full_spectrum_extract"],
+      "infused_vs_non_infused": "non-infused wellness tinctures should not map into cannabis category"
     }
+  },
+  "classification_heuristics": {
+    "pack_size": "derive_units_per_package from label text when explicit field missing",
+    "weight_normalization": "convert mg and g to canonical grams or milligrams before category benchmarking",
+    "naming_standardization": ["normalize_brand_separator", "strip_promotional_terms", "preserve_strain_identifier"]
   },
   "relationships": [
     {"from": "distillate", "to": "vape_oil", "relation": "base_input_for"},
     {"from": "vape_oil", "to": "cart_fill", "relation": "fills"},
     {"from": "hash", "to": "rosin", "relation": "pressed_into"},
-    {"from": "flower", "to": "pre_roll", "relation": "ground_and_filled_into"}
+    {"from": "flower", "to": "pre_roll", "relation": "ground_and_filled_into"},
+    {"from": "trim", "to": "extraction_feedstock", "relation": "upcycled_into"}
   ]
 }
