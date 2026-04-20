@@ -22,15 +22,36 @@ RESPONSE_MODE_CONFIG: dict[ModeName, dict[str, Any]] = {
     },
     "extraction": {
         "tone": "technical and production-focused",
-        "priorities": [
-            "yield",
-            "stage loss",
-            "failed batches",
-            "throughput",
-            "formulation / terpene context",
-            "cost per gram / value per gram / margin",
-        ],
+        "priorities": ["yield", "stage loss", "failed batches", "throughput", "formulation / terpene context", "cost per gram / value per gram / margin"],
         "response_style": "run-performance and corrective-action brief",
+        "required_sections": ["answer", "explanation", "recommendations", "risk_flags", "inefficiencies"],
+        "brevity_preference": "concise",
+    },
+    "retail_ops": {
+        "tone": "store-operations and service-level focused",
+        "priorities": ["conversion", "ATV/UPT", "queue throughput", "staffing vs demand", "stockout prevention"],
+        "response_style": "store floor execution brief",
+        "required_sections": ["answer", "explanation", "recommendations", "risk_flags", "inefficiencies"],
+        "brevity_preference": "concise",
+    },
+    "cultivation": {
+        "tone": "production agronomy and quality-control focused",
+        "priorities": ["canopy productivity", "harvest cadence", "quality pass rate", "room-level variance", "labor bottlenecks"],
+        "response_style": "grow operations stabilization brief",
+        "required_sections": ["answer", "explanation", "recommendations", "risk_flags", "inefficiencies"],
+        "brevity_preference": "concise",
+    },
+    "kitchen": {
+        "tone": "batch-control and food-safety disciplined",
+        "priorities": ["potency consistency", "batch yield", "sanitation/changeover controls", "traceability", "packaging handoff timing"],
+        "response_style": "kitchen process-control brief",
+        "required_sections": ["answer", "explanation", "recommendations", "risk_flags", "inefficiencies"],
+        "brevity_preference": "concise",
+    },
+    "packaging": {
+        "tone": "line-balance and unit-quality focused",
+        "priorities": ["label accuracy", "first-pass yield", "reconciliation", "throughput bottlenecks", "release readiness"],
+        "response_style": "packaging line-control brief",
         "required_sections": ["answer", "explanation", "recommendations", "risk_flags", "inefficiencies"],
         "brevity_preference": "concise",
     },
@@ -144,94 +165,58 @@ def _build_response(
     )
 
 
-def build_buyer_response(
-    quick_answer: str,
-    explanation_context: str,
-    recommendations: list[str] | None,
-    risk_flags: list[str] | None,
-    inefficiencies: list[str] | None,
-    confidence: str,
-    sources: list[str] | None,
-) -> StructuredResponse:
-    return _build_response("buyer", quick_answer, explanation_context, recommendations, risk_flags, inefficiencies, confidence, sources)
+def build_buyer_response(**kwargs: Any) -> StructuredResponse:
+    return _build_response("buyer", **kwargs)
 
 
-def build_inventory_response(
-    quick_answer: str,
-    explanation_context: str,
-    recommendations: list[str] | None,
-    risk_flags: list[str] | None,
-    inefficiencies: list[str] | None,
-    confidence: str,
-    sources: list[str] | None,
-) -> StructuredResponse:
-    return _build_response("inventory", quick_answer, explanation_context, recommendations, risk_flags, inefficiencies, confidence, sources)
+def build_inventory_response(**kwargs: Any) -> StructuredResponse:
+    return _build_response("inventory", **kwargs)
 
 
-def build_extraction_response(
-    quick_answer: str,
-    explanation_context: str,
-    recommendations: list[str] | None,
-    risk_flags: list[str] | None,
-    inefficiencies: list[str] | None,
-    confidence: str,
-    sources: list[str] | None,
-) -> StructuredResponse:
-    return _build_response("extraction", quick_answer, explanation_context, recommendations, risk_flags, inefficiencies, confidence, sources)
+def build_extraction_response(**kwargs: Any) -> StructuredResponse:
+    return _build_response("extraction", **kwargs)
 
 
-def build_ops_response(
-    quick_answer: str,
-    explanation_context: str,
-    recommendations: list[str] | None,
-    risk_flags: list[str] | None,
-    inefficiencies: list[str] | None,
-    confidence: str,
-    sources: list[str] | None,
-) -> StructuredResponse:
-    return _build_response("ops", quick_answer, explanation_context, recommendations, risk_flags, inefficiencies, confidence, sources)
+def build_retail_ops_response(**kwargs: Any) -> StructuredResponse:
+    return _build_response("retail_ops", **kwargs)
 
 
-def build_copilot_response(
-    quick_answer: str,
-    explanation_context: str,
-    recommendations: list[str] | None,
-    risk_flags: list[str] | None,
-    inefficiencies: list[str] | None,
-    confidence: str,
-    sources: list[str] | None,
-) -> StructuredResponse:
-    return _build_response("copilot", quick_answer, explanation_context, recommendations, risk_flags, inefficiencies, confidence, sources)
+def build_cultivation_response(**kwargs: Any) -> StructuredResponse:
+    return _build_response("cultivation", **kwargs)
 
 
-def build_compliance_response(
-    quick_answer: str,
-    explanation_context: str,
-    recommendations: list[str] | None,
-    risk_flags: list[str] | None,
-    inefficiencies: list[str] | None,
-    confidence: str,
-    sources: list[str] | None,
-) -> StructuredResponse:
-    return _build_response("compliance", quick_answer, explanation_context, recommendations, risk_flags, inefficiencies, confidence, sources)
+def build_kitchen_response(**kwargs: Any) -> StructuredResponse:
+    return _build_response("kitchen", **kwargs)
 
 
-def build_executive_response(
-    quick_answer: str,
-    explanation_context: str,
-    recommendations: list[str] | None,
-    risk_flags: list[str] | None,
-    inefficiencies: list[str] | None,
-    confidence: str,
-    sources: list[str] | None,
-) -> StructuredResponse:
-    return _build_response("executive", quick_answer, explanation_context, recommendations, risk_flags, inefficiencies, confidence, sources)
+def build_packaging_response(**kwargs: Any) -> StructuredResponse:
+    return _build_response("packaging", **kwargs)
+
+
+def build_ops_response(**kwargs: Any) -> StructuredResponse:
+    return _build_response("ops", **kwargs)
+
+
+def build_copilot_response(**kwargs: Any) -> StructuredResponse:
+    return _build_response("copilot", **kwargs)
+
+
+def build_compliance_response(**kwargs: Any) -> StructuredResponse:
+    return _build_response("compliance", **kwargs)
+
+
+def build_executive_response(**kwargs: Any) -> StructuredResponse:
+    return _build_response("executive", **kwargs)
 
 
 RESPONSE_BUILDERS = {
     "buyer": build_buyer_response,
     "inventory": build_inventory_response,
     "extraction": build_extraction_response,
+    "retail_ops": build_retail_ops_response,
+    "cultivation": build_cultivation_response,
+    "kitchen": build_kitchen_response,
+    "packaging": build_packaging_response,
     "ops": build_ops_response,
     "copilot": build_copilot_response,
     "compliance": build_compliance_response,

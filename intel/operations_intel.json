@@ -1,0 +1,150 @@
+{
+  "module": "operations_intel",
+  "version": "1.0",
+  "retail_ops": {
+    "north_star_metrics": {
+      "conversion_rate": "transactions / door_swings",
+      "atv": "net_sales / transactions",
+      "upt": "units_sold / transactions",
+      "labor_efficiency": "net_sales / labor_hour",
+      "queue_abandonment_rate": "walkouts / queue_entries"
+    },
+    "thresholds": {
+      "conversion_watch": {"max": 0.18, "unit": "ratio"},
+      "queue_wait_escalation_minutes": 8,
+      "stockout_high_risk_sku_pct": 0.08,
+      "discount_rate_guardrail": {"max": 0.18, "note": "protect margin quality"}
+    },
+    "heuristics": [
+      "Align scheduler to peak windows first, then fill off-peak coverage.",
+      "Treat top-velocity SKU stockouts as immediate conversion leakage.",
+      "Use attach-rate coaching scripts on accessory + basket-builder categories.",
+      "Avoid blanket discounts; prefer target offers tied to aging units."
+    ],
+    "failure_modes": [
+      "menu_has_inactive_or_oos_items_during_peak",
+      "handoff_lag_between_intake_and_floor_replenishment",
+      "inconsistent_manager_escalation_on_queue_spikes"
+    ],
+    "escalation_triggers": [
+      {"id": "retail_queue_breach", "if": "median_queue_wait_min > 8", "then": "deploy_manager_to_triage_line_and_open_register"},
+      {"id": "retail_conversion_drop", "if": "conversion_rate_down_15pct_week_over_week", "then": "audit_floor_coverage_menu_availability_and_greeting_protocol"},
+      {"id": "retail_stockout_pressure", "if": "top_sku_stockout_pct > 8%", "then": "accelerate_intake_and_replenishment_cycles"}
+    ]
+  },
+  "cultivation": {
+    "core_metrics": {
+      "canopy_productivity_g_per_sqft": "sellable_flower_g / canopy_sqft",
+      "harvest_cadence_stability": "stdev(harvest_weight_by_week)",
+      "pass_rate": "released_lots / tested_lots",
+      "trim_yield_ratio": "trim_g / harvested_g"
+    },
+    "targets": {
+      "pass_rate_floor": 0.92,
+      "cycle_variance_ceiling_pct": 0.1,
+      "microbial_flag_tolerance": "zero_repeat_per_room",
+      "dry_room_moisture_target_pct": {"min": 10.5, "max": 12.5}
+    },
+    "heuristics": [
+      "Score cultivar-room pairings quarterly before canopy expansion.",
+      "Segment biomass into premium flower, extraction feedstock, and trim early.",
+      "Protect dry/cure SOP adherence; post-harvest drift destroys upstream gains.",
+      "Treat persistent labor bottlenecks in harvest + trim as throughput constraints."
+    ],
+    "failure_modes": [
+      "extended_cycle_days_without_yield_gain",
+      "cure_moisture_out_of_spec",
+      "room_level_pass_rate_instability"
+    ],
+    "escalation_triggers": [
+      {"id": "cultivation_pass_rate_drop", "if": "pass_rate < 0.92", "then": "block_new_room_expansion_and_execute_root_cause_review"},
+      {"id": "cultivation_microbial_repeat", "if": "microbial_flags_repeat_in_room", "then": "deep_clean_environmental_reset_and_hold_impacted_lots"},
+      {"id": "cultivation_cadence_break", "if": "harvest_variance_exceeds_plan_15pct", "then": "rebuild_harvest_calendar_and_labor_plan"}
+    ]
+  },
+  "kitchen": {
+    "core_metrics": {
+      "potency_variance_pct": "abs(actual_mg_per_serving - target_mg) / target_mg",
+      "batch_yield_pct": "sellable_units / planned_units",
+      "rework_rate": "rework_batches / total_batches",
+      "line_clearance_compliance": "signed_changeovers / required_changeovers"
+    },
+    "control_points": [
+      "homogenization_and_mixing_time",
+      "in_process_weight_checks",
+      "cooling_curve_documentation",
+      "packaging_handoff_time_stamp",
+      "ingredient_lot_traceability"
+    ],
+    "thresholds": {
+      "potency_variance_escalation_pct": 10,
+      "batch_yield_floor": 0.94,
+      "rework_rate_watch": 0.05
+    },
+    "failure_modes": [
+      "inconsistent_infusion_distribution",
+      "cooling_delays_causing_texture_or_stability_failure",
+      "incomplete_batch_records_blocking_release"
+    ],
+    "escalation_triggers": [
+      {"id": "kitchen_potency_drift", "if": "potency_variance_pct > 10", "then": "hold_batch_and_verify_mixing_calibration"},
+      {"id": "kitchen_handoff_delay", "if": "kitchen_to_packaging_handoff_gt_target", "then": "rebalance_line_schedule_and_packaging_slot"},
+      {"id": "kitchen_traceability_gap", "if": "missing_ingredient_lot_or_batch_record", "then": "stop_release_until_records_complete"}
+    ]
+  },
+  "packaging": {
+    "core_metrics": {
+      "line_throughput": "units_packaged / packaging_hour",
+      "first_pass_yield": "units_released_without_rework / total_units",
+      "label_accuracy": "correct_labels / total_labels",
+      "reconciliation_accuracy": "1 - abs(system_vs_physical_variance)/total_units"
+    },
+    "thresholds": {
+      "label_error_tolerance": 0,
+      "reconciliation_variance_units_watch": 2,
+      "completion_rate_floor": 0.9,
+      "rework_rate_watch": 0.04
+    },
+    "heuristics": [
+      "Balance lines by constraint operation, not average cycle time.",
+      "Run preflight SKU/label verification at every shift start.",
+      "Treat child-resistant and tamper-evident failures as release blockers.",
+      "Route repeat defect SKUs to formal spec-review instead of ad-hoc fixes."
+    ],
+    "failure_modes": [
+      "label_template_version_mismatch",
+      "late_material_handoff_from_kitchen_or_extraction",
+      "unlogged_rework_breaking_lot_traceability"
+    ],
+    "escalation_triggers": [
+      {"id": "packaging_label_event", "if": "label_error_detected", "then": "quarantine_affected_lot_and_execute_100_percent_label_check"},
+      {"id": "packaging_recon_breach", "if": "reconciliation_variance_units > 2", "then": "count_reset_and_supervisor_signoff_required"},
+      {"id": "packaging_fpy_drop", "if": "first_pass_yield < 0.95", "then": "line_diagnostic_and_operator_retraining"}
+    ]
+  },
+  "executive": {
+    "cross_functional_kpis": [
+      "gross_margin_dollars",
+      "cash_conversion_cycle_days",
+      "on_time_release_rate",
+      "inventory_age_90_plus_share",
+      "department_rework_cost_percent"
+    ],
+    "decision_lenses": {
+      "margin_quality": "separate price-led growth from discount-led volume",
+      "operating_leverage": "verify labor and overhead absorption improves with scale",
+      "capital_allocation": "fund bottleneck relief before expansion bets",
+      "risk_priority": "rank by recurrence x severity x financial exposure"
+    },
+    "warning_signals": [
+      "revenue_up_but_cash_down",
+      "yield_up_but_first_pass_quality_down",
+      "inventory_growth_outpacing_sell_through",
+      "compliance_issue_aging_above_policy"
+    ],
+    "cadence": {
+      "weekly": ["constraint_review", "risk_owner_updates", "inventory_aging_actions"],
+      "monthly": ["capital_roi_review", "assortment_reset", "capacity_rebalancing"]
+    }
+  }
+}
