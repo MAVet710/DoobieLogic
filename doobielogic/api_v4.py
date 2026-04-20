@@ -7,6 +7,7 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from doobielogic.copilot import DoobieCopilot
+from doobielogic.config import load_doobie_config
 from doobielogic.evals import apply_low_confidence_fallback
 from doobielogic.intelligence_v3 import build_intel_v3
 from doobielogic.key_management import KeyStore
@@ -15,11 +16,12 @@ from doobielogic.license_store import LicenseStore
 
 app = FastAPI(title="DoobieLogic API v4")
 
-API_KEY = os.environ.get("DOOBIE_API_KEY", "")
-ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")
-LICENSE_STORE = LicenseStore(path=os.environ.get("DOOBIE_LICENSE_STORE", "data/license_store.json"))
-KEY_STORE = KeyStore(path=os.environ.get("DOOBIE_KEY_DB", "data/key_store.db"))
-KEY_VALIDATION_TOKEN = os.environ.get("DOOBIE_KEY_VALIDATION_TOKEN", "")
+CONFIG = load_doobie_config()
+API_KEY = CONFIG.api_key
+ADMIN_API_KEY = CONFIG.admin_api_key
+LICENSE_STORE = LicenseStore(path=CONFIG.license_store_path)
+KEY_STORE = KeyStore(path=CONFIG.key_store_path)
+KEY_VALIDATION_TOKEN = CONFIG.key_validation_token
 COPILOT = DoobieCopilot()
 
 
@@ -194,12 +196,15 @@ def _support_response(resp, mode: str) -> dict[str, Any]:
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    diagnostics = CONFIG.diagnostics()
     return {
         "status": "ok",
         "service": "DoobieLogic API v4",
         "license_validation_route": "/api/v1/license/validate",
-        "license_store": os.environ.get("DOOBIE_LICENSE_STORE", "data/license_store.json"),
-        "key_store": os.environ.get("DOOBIE_KEY_DB", "data/key_store.db"),
+        "backend_mode": str(diagnostics["backend_mode"]),
+        "license_store": str(diagnostics["license_store_path"]),
+        "key_store": str(diagnostics["key_store_path"]),
+        "warnings": ",".join(diagnostics["warnings"]) if diagnostics["warnings"] else "",
     }
 
 
@@ -271,9 +276,27 @@ def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None
         dept = (req.department or "operations").lower()
         resp = COPILOT.ask_with_operations(req.question, department=dept, parsed_data=req.data, persona="ops", state=req.state)
         return _support_response(resp, mode="ops")
+    if mode in {"retail_ops", "cultivation", "kitchen", "packaging"}:
+        resp = COPILOT.ask_with_operations(
+            req.question,
+            department=mode,
+            parsed_data=req.data,
+            persona=mode,  # type: ignore[arg-type]
+            state=req.state,
+        )
+        return _support_response(resp, mode=mode)
+    if mode == "compliance":
+        resp = COPILOT.ask_with_operations(
+            req.question,
+            department="compliance",
+            parsed_data=req.data,
+            persona="compliance",
+            state=req.state,
+        )
+        return _support_response(resp, mode="compliance")
 
-    routed_persona = "compliance" if mode == "compliance" else "executive"
-    resp = COPILOT.ask(req.question, persona=routed_persona, state=req.state)
+    resp = COPILOT.ask(req.question, persona="executive", state=req.state)
+    routed_persona = "executive"
     return _support_response(resp, mode=routed_persona)
 
 

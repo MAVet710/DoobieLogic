@@ -11,7 +11,12 @@ def analyze_room_performance(data: dict) -> dict:
     for idx, room in enumerate(rooms):
         if idx >= len(actual):
             continue
-        gap = float(actual[idx]) - float(expected[idx]) if idx < len(expected) else float(actual[idx])
+        try:
+            current_actual = float(actual[idx])
+            current_expected = float(expected[idx]) if idx < len(expected) else 0.0
+        except (TypeError, ValueError):
+            continue
+        gap = current_actual - current_expected if idx < len(expected) else current_actual
         perf.setdefault(str(room), []).append(gap)
     avg_gap = {room: round(sum(vals) / len(vals), 2) for room, vals in perf.items()}
     under = [room for room, gap in avg_gap.items() if gap < 0]
@@ -19,8 +24,8 @@ def analyze_room_performance(data: dict) -> dict:
 
 
 def analyze_yield_variance(data: dict) -> dict:
-    expected = [float(x) for x in data.get("expected_yield_g", []) if x is not None]
-    actual = [float(x) for x in data.get("actual_yield_g", []) if x is not None]
+    expected = [float(x) for x in data.get("expected_yield_g", []) if x not in (None, "")]
+    actual = [float(x) for x in data.get("actual_yield_g", []) if x not in (None, "")]
     if not expected or not actual:
         return {"status": "skipped", "reason": "yield fields missing"}
     diffs = [a - e for a, e in zip(actual, expected)]

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import os
 from datetime import date
 from typing import Any
 
 import httpx
 
+from doobielogic.config import DoobieConfig, load_doobie_config
 from doobielogic.key_management import KEY_TYPE_API, GeneratedKey, KeyStore
 from doobielogic.license_models import Customer, License
 from doobielogic.license_store import LicenseStore
@@ -23,27 +23,53 @@ class AdminGateway:
     - remote_api: write/read through Doobie FastAPI admin endpoints (production-safe split deployments)
     """
 
-    def __init__(self) -> None:
-        self.remote_base_url = (os.environ.get("DOOBIE_ADMIN_API_BASE_URL") or "").strip().rstrip("/")
-        self.admin_api_key = (os.environ.get("ADMIN_API_KEY") or "").strip()
-        self.timeout_seconds = float(os.environ.get("DOOBIE_ADMIN_API_TIMEOUT", "12"))
+    def __init__(self, config: DoobieConfig | None = None) -> None:
+        self.config = config or load_doobie_config()
+        self.remote_base_url = self.config.admin_api_base_url
+        self.admin_api_key = self.config.admin_api_key
+        self.timeout_seconds = self.config.admin_api_timeout
 
         if self.remote_base_url:
             self.mode = "remote_api"
             self.license_store: LicenseStore | None = None
             self.key_store: KeyStore | None = None
+            if not self.admin_api_key:
+                raise AdminGatewayError(
+                    "remote_api mode is configured but ADMIN_API_KEY is missing. "
+                    "Set ADMIN_API_KEY or unset DOOBIE_ADMIN_API_BASE_URL."
+                )
         else:
             self.mode = "local"
-            self.license_store = LicenseStore(path=os.environ.get("DOOBIE_LICENSE_STORE", "data/license_store.json"))
-            self.key_store = KeyStore(path=os.environ.get("DOOBIE_KEY_DB", "data/key_store.db"))
+            self.license_store = LicenseStore(path=self.config.license_store_path)
+            self.key_store = KeyStore(path=self.config.key_store_path)
 
-    def storage_diagnostic(self) -> dict[str, str]:
+    def storage_diagnostic(self) -> dict[str, Any]:
         if self.mode == "remote_api":
-            return {"mode": self.mode, "base_url": self.remote_base_url}
+            return {
+                "mode": self.mode,
+                "base_url": self.remote_base_url,
+                "admin_api_key_configured": bool(self.admin_api_key),
+                "source_of_truth": "remote_api",
+            }
         return {
             "mode": self.mode,
-            "license_store": os.environ.get("DOOBIE_LICENSE_STORE", "data/license_store.json"),
-            "key_store": os.environ.get("DOOBIE_KEY_DB", "data/key_store.db"),
+            "license_store": self.config.license_store_path,
+            "key_store": self.config.key_store_path,
+            "source_of_truth": "local_store",
+        }
+
+    def test_connectivity(self) -> dict[str, Any]:
+        if self.mode == "local":
+            return {"ok": True, "mode": "local", "detail": "Local mode uses direct file/database access."}
+        health = self._request("GET", "/health")
+        return {
+            "ok": True,
+            "mode": self.mode,
+            "base_url": self.remote_base_url,
+            "remote_health_status": health.get("status"),
+            "remote_backend": health.get("backend_mode"),
+            "remote_license_store": health.get("license_store"),
+            "remote_key_store": health.get("key_store"),
         }
 
     def _admin_headers(self) -> dict[str, str]:

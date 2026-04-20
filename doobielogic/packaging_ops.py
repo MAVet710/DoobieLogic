@@ -2,16 +2,16 @@ from __future__ import annotations
 
 
 def analyze_packaging_efficiency(data: dict) -> dict:
-    completion = [float(x) for x in data.get("completion_rate", []) if x is not None]
-    hours = [float(x) for x in data.get("packaging_hours", []) if x is not None]
+    completion = [float(x) for x in data.get("completion_rate", []) if x not in (None, "")]
+    hours = [float(x) for x in data.get("packaging_hours", []) if x not in (None, "")]
     if not completion and not hours:
         return {"status": "skipped", "reason": "completion/hours missing"}
     return {"status": "ok", "avg_completion_rate": round(sum(completion) / len(completion), 3) if completion else 0, "avg_packaging_hours": round(sum(hours) / len(hours), 2) if hours else 0}
 
 
 def flag_packaging_risk_signals(data: dict) -> dict:
-    recon = [abs(float(x)) for x in data.get("reconciliation_variance", []) if x is not None]
-    scrap = [float(x) for x in data.get("scrap_units", []) if x is not None]
+    recon = [abs(float(x)) for x in data.get("reconciliation_variance", []) if x not in (None, "")]
+    scrap = [float(x) for x in data.get("scrap_units", []) if x not in (None, "")]
     return {
         "status": "ok",
         "label_errors": sum(1 for x in data.get("label_error_flag", []) if bool(x)),
