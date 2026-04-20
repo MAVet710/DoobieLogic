@@ -204,6 +204,41 @@ def test_bootstrap_closed_after_admin_key_exists(monkeypatch, tmp_path):
     assert second.status_code == 409
 
 
+def test_bootstrap_key_can_manage_additional_admin_and_service_keys(monkeypatch, tmp_path):
+    monkeypatch.setattr("doobielogic.api_v4.ADMIN_API_KEY", "")
+    monkeypatch.setattr("doobielogic.api_v4.KEY_STORE", KeyStore(path=tmp_path / "keys.db"))
+
+    bootstrap = client.post("/api/v1/admin/bootstrap/generate", json={"label": "Initial Bootstrap Admin Key", "notes": ""})
+    assert bootstrap.status_code == 200
+    admin_headers = {"Authorization": f"Bearer {bootstrap.json()['raw_key']}"}
+
+    create_admin = client.post(
+        "/api/v1/admin/api-keys/admin/generate",
+        headers=admin_headers,
+        json={"label": "Ops Admin", "notes": "secondary"},
+    )
+    assert create_admin.status_code == 200
+    assert create_admin.json()["raw_key"].startswith("DLB-ADM-")
+
+    create_service = client.post(
+        "/api/v1/admin/api-keys/generate",
+        headers=admin_headers,
+        json={
+            "company_name": "Buyer Dashboard",
+            "label": "Buyer API",
+            "scope": "buyer_dashboard",
+            "notes": "integration",
+        },
+    )
+    assert create_service.status_code == 200
+    service_key = create_service.json()["raw_key"]
+    assert service_key.startswith("DLB-API-")
+
+    validate_service = client.post("/api/v1/keys/validate", json={"api_key": service_key})
+    assert validate_service.status_code == 200
+    assert validate_service.json()["valid"] is True
+
+
 def test_service_endpoints_reject_admin_keys(monkeypatch, tmp_path):
     monkeypatch.setattr("doobielogic.api_v4.ADMIN_API_KEY", "")
     monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
