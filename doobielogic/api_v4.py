@@ -218,6 +218,8 @@ def health() -> dict[str, str]:
         "service": "DoobieLogic API v4",
         "license_validation_route": "/api/v1/license/validate",
         "backend_mode": str(diagnostics["backend_mode"]),
+        "backend_mode_source": str(diagnostics["backend_mode_source"]),
+        "preferred_backend_mode": str(diagnostics["preferred_backend_mode"]),
         "license_store": str(diagnostics["license_store_path"]),
         "key_store": str(diagnostics["key_store_path"]),
         "warnings": ",".join(diagnostics["warnings"]) if diagnostics["warnings"] else "",

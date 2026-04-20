@@ -53,7 +53,7 @@ class AdminGateway:
         self.service_api_key = self.config.api_key
         self.timeout_seconds = self.config.admin_api_timeout
 
-        if self.remote_base_url:
+        if self.config.backend_mode == "remote_api":
             self.mode = "remote_api"
             self.license_store: LicenseStore | None = None
             self.key_store: KeyStore | None = None
