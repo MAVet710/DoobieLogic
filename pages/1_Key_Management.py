@@ -27,6 +27,7 @@ st.markdown(
 def _ensure_session_state() -> None:
     defaults: dict[str, Any] = {
         "admin_authenticated": False,
+        "active_admin_api_key": None,
         "latest_license_key": None,
         "latest_service_api_key": None,
         "latest_admin_api_key": None,
@@ -64,6 +65,13 @@ def _render_latest_generated_key(session_key: str, *, kind: str) -> None:
         mime="text/plain",
         key=f"download_{session_key}",
     )
+
+
+def _mask_key(raw_key: str) -> str:
+    safe = (raw_key or "").strip()
+    if len(safe) <= 12:
+        return "*" * len(safe)
+    return f"{safe[:8]}...{safe[-4:]}"
 
 
 def _admin_authenticated() -> bool:
@@ -148,10 +156,17 @@ except AdminGatewayError as exc:
 config = load_doobie_config(runtime_config_source)
 diagnostic = gateway.storage_diagnostic()
 mode = diagnostic.get("mode")
+
+if mode == "remote_api":
+    env_admin_key_configured = bool(config.admin_api_key)
+    if not env_admin_key_configured and st.session_state.get("active_admin_api_key"):
+        gateway.set_admin_api_key(st.session_state["active_admin_api_key"])
+
 bootstrap, bootstrap_error = _safe_gateway_call("Bootstrap status", gateway.bootstrap_status, fallback={})
 bootstrap_routes_available = bool(bootstrap.get("bootstrap_routes_available", True))
 bootstrap_mode = bootstrap.get("bootstrap_mode")
 backend_compatibility = str(bootstrap.get("backend_compatibility") or "unknown")
+has_effective_admin_key = (mode != "remote_api") or gateway.has_admin_api_key()
 
 diagnostics_snapshot = gateway.admin_diagnostics(bootstrap_status=bootstrap if isinstance(bootstrap, dict) else None)
 
@@ -159,6 +174,50 @@ if mode == "remote_api":
     st.info(f"Backend mode: **REMOTE API** (`{diagnostic.get('base_url')}`)")
 else:
     st.success("Backend mode: **LOCAL** (file/db direct access)")
+
+st.markdown("### Admin console status")
+if st.session_state.get("admin_authenticated"):
+    st.success("God login status: **Authenticated**")
+else:
+    st.error("God login status: **Locked**")
+
+if bootstrap_mode is True:
+    st.warning("Bootstrap status: **Needs initial persistent admin API key**")
+elif bootstrap_mode is False:
+    st.success("Bootstrap status: **Complete**")
+else:
+    st.info("Bootstrap status: **Unknown**")
+
+if mode == "remote_api":
+    st.markdown("#### Active admin API key (for remote admin routes)")
+    if config.admin_api_key:
+        st.caption("Using ADMIN_API_KEY from secrets/env (compatibility mode).")
+        st.code(_mask_key(config.admin_api_key), language="text")
+    else:
+        with st.form("set_runtime_admin_api_key"):
+            runtime_admin_key = st.text_input(
+                "Paste a persistent admin API key",
+                type="password",
+                help="Used only for this Streamlit session; not persisted to secrets/env.",
+            )
+            set_runtime_admin_key = st.form_submit_button("Use Admin API Key for This Session")
+        if set_runtime_admin_key:
+            if runtime_admin_key.strip():
+                st.session_state["active_admin_api_key"] = runtime_admin_key.strip()
+                gateway.set_admin_api_key(runtime_admin_key.strip())
+                st.success("Session admin API key applied.")
+                st.rerun()
+            else:
+                st.error("Provide an admin API key to continue.")
+        active_runtime_key = st.session_state.get("active_admin_api_key")
+        if active_runtime_key:
+            st.caption("Session key loaded")
+            st.code(_mask_key(active_runtime_key), language="text")
+            if st.button("Clear session admin API key", key="clear_runtime_admin_key"):
+                st.session_state["active_admin_api_key"] = None
+                st.rerun()
+        elif bootstrap_mode is False:
+            st.warning("Bootstrap is complete, but no active admin API key is loaded for this session.")
 
 if bootstrap_error:
     st.info("Bootstrap status is currently unavailable. Other admin sections will still render when possible.")
@@ -202,6 +261,7 @@ with st.expander("Backend / storage diagnostics", expanded=False):
 
 if st.button("Log out", key="admin_logout"):
     st.session_state["admin_authenticated"] = False
+    st.session_state["active_admin_api_key"] = None
     st.rerun()
 
 tab_license, tab_api, tab_manage, tab_validate = st.tabs(
@@ -213,7 +273,11 @@ with tab_license:
     st.subheader("Generate Customer License Key")
     st.caption("Customer license keys are used by Buyer Dashboard customers for entitlement and plan validation.")
 
-    customers, customers_error = _safe_gateway_call("Load customers", gateway.list_customers, fallback=[])
+    if mode == "remote_api" and not has_effective_admin_key:
+        st.warning("Load an admin API key above to create/list customers and issue licenses in remote mode.")
+        customers, customers_error = [], None
+    else:
+        customers, customers_error = _safe_gateway_call("Load customers", gateway.list_customers, fallback=[])
     customer_lookup = {f"{c.company_name} ({c.customer_id})": c for c in customers}
     customer_mode_options = ["Use existing customer", "Create new customer"]
 
@@ -303,6 +367,8 @@ with tab_api:
         if bootstrap_create:
             try:
                 generated = gateway.bootstrap_generate_initial_admin_key(label=label, notes=notes)
+                gateway.set_admin_api_key(generated.raw_key)
+                st.session_state["active_admin_api_key"] = generated.raw_key
                 st.session_state["latest_admin_api_key"] = {"record_id": generated.record_id, "raw_key": generated.raw_key}
                 st.success("Initial admin API key created and persisted.")
                 st.rerun()
@@ -331,7 +397,9 @@ with tab_api:
         admin_submitted = st.form_submit_button("Generate Admin API Key")
 
     if admin_submitted:
-        if not admin_label.strip():
+        if mode == "remote_api" and not has_effective_admin_key:
+            st.error("Load an admin API key above before generating additional admin keys.")
+        elif not admin_label.strip():
             st.error("Admin key label is required.")
         else:
             try:
@@ -367,7 +435,9 @@ with tab_api:
         submitted = st.form_submit_button("Generate Service API Key")
 
     if submitted:
-        if not company_name.strip() or not label.strip() or not scope.strip():
+        if mode == "remote_api" and not has_effective_admin_key:
+            st.error("Load an admin API key above before generating service keys.")
+        elif not company_name.strip() or not label.strip() or not scope.strip():
             st.error("Company, label, and scope are required.")
         else:
             try:
@@ -395,8 +465,13 @@ with tab_manage:
 
     if manage_type == "Licenses":
         st.subheader("Customer License Inventory")
-        licenses, licenses_error = _safe_gateway_call("Load licenses", gateway.list_licenses, fallback=[])
-        customers, customer_error = _safe_gateway_call("Load customers", gateway.list_customers, fallback=[])
+        if mode == "remote_api" and not has_effective_admin_key:
+            st.warning("Load an admin API key above to manage licenses in remote mode.")
+            licenses, licenses_error = [], None
+            customers, customer_error = [], None
+        else:
+            licenses, licenses_error = _safe_gateway_call("Load licenses", gateway.list_licenses, fallback=[])
+            customers, customer_error = _safe_gateway_call("Load customers", gateway.list_customers, fallback=[])
         customers_by_id = {c.customer_id: c for c in customers}
 
         if licenses_error and customer_error:
@@ -451,16 +526,21 @@ with tab_manage:
     else:
         st.subheader("API Key Inventory (Persistent)")
         search = st.text_input("Search company / label / scope / notes")
-        service_records, service_error = _safe_gateway_call(
-            "Load service API keys",
-            lambda: gateway.load_api_key_records(search=search or None),
-            fallback=[],
-        )
-        admin_records, admin_error = _safe_gateway_call(
-            "Load admin API keys",
-            lambda: gateway.load_admin_api_key_records(search=search or None),
-            fallback=[],
-        )
+        if mode == "remote_api" and not has_effective_admin_key:
+            st.warning("Load an admin API key above to manage API key records in remote mode.")
+            service_records, service_error = [], None
+            admin_records, admin_error = [], None
+        else:
+            service_records, service_error = _safe_gateway_call(
+                "Load service API keys",
+                lambda: gateway.load_api_key_records(search=search or None),
+                fallback=[],
+            )
+            admin_records, admin_error = _safe_gateway_call(
+                "Load admin API keys",
+                lambda: gateway.load_admin_api_key_records(search=search or None),
+                fallback=[],
+            )
         records = admin_records + service_records
 
         if service_error and admin_error:

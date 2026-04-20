@@ -62,12 +62,19 @@ class AdminGateway:
             self.license_store = LicenseStore(path=self.config.license_store_path)
             self.key_store = KeyStore(path=self.config.key_store_path)
 
+    def set_admin_api_key(self, admin_api_key: str | None) -> None:
+        self.admin_api_key = (admin_api_key or "").strip()
+
+    def has_admin_api_key(self) -> bool:
+        return bool((self.admin_api_key or "").strip())
+
     def storage_diagnostic(self) -> dict[str, Any]:
         if self.mode == "remote_api":
             return {
                 "mode": self.mode,
                 "base_url": self.remote_base_url,
-                "admin_api_key_configured": bool(self.admin_api_key),
+                "admin_api_key_configured": bool(self.config.admin_api_key),
+                "admin_api_key_effective": bool(self.admin_api_key),
                 "service_api_key_configured": bool(self.service_api_key),
                 "source_of_truth": "remote_api",
             }
