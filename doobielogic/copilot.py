@@ -223,7 +223,7 @@ class DoobieCopilot:
         grounded = build_grounded_summary(question=question, state=safe_state, module=MODULE_MAP[safe_persona])
         knowledge = search_department_knowledge(safe_persona if safe_persona != "ops" else "executive", question, limit=5)
         context_mode = "ops" if safe_persona in {"ops", "executive"} else safe_persona
-        context = build_doobie_context(data={}, mode=self._intel_mode(context_mode), question=question)
+        context = build_doobie_context(data={}, mode=self._intel_mode(context_mode), question=question, state=safe_state)
 
         confidence = infer_confidence(
             has_structured_data=False,
@@ -276,7 +276,7 @@ class DoobieCopilot:
             "compliance": "compliance",
         }
         context_mode = dept_mode_map.get(dept, safe_persona if safe_persona in dept_mode_map.values() else "executive")
-        context = build_doobie_context(data=parsed_data or {}, mode=self._intel_mode(context_mode), question=question)
+        context = build_doobie_context(data=parsed_data or {}, mode=self._intel_mode(context_mode), question=question, state=safe_state)
 
         has_data = bool(parsed_data)
         has_rules = bool(outputs.get("knowledge_hits")) or bool(outputs.get("recommendations"))
@@ -326,7 +326,7 @@ class DoobieCopilot:
         data_insights = analyze_mapped_data(mapped_data or {}) if mapped_data else {}
         data_summary = render_insight_summary(data_insights)
         context_mode = "inventory" if safe_persona == "buyer" else (safe_persona if safe_persona in {"retail_ops", "cultivation", "kitchen", "packaging", "compliance", "executive", "extraction"} else "ops")
-        context = build_doobie_context(data=mapped_data or {}, mode=self._intel_mode(context_mode), question=question)
+        context = build_doobie_context(data=mapped_data or {}, mode=self._intel_mode(context_mode), question=question, state=safe_state)
 
         answer_sections = [
             f"Role lens: {PERSONA_GUIDANCE[safe_persona]}",
@@ -393,7 +393,12 @@ class DoobieCopilot:
         sources = list(dict.fromkeys((analysis.regulation_links or {}).values())) + grounded.get("sources", [])
 
         context_mode = "inventory" if safe_persona == "buyer" else safe_persona
-        context = build_doobie_context(data=payload.model_dump(), mode=self._intel_mode(context_mode), question="inventory risk promotions compliance assortment pricing days on hand")
+        context = build_doobie_context(
+            data=payload.model_dump(),
+            mode=self._intel_mode(context_mode),
+            question="inventory risk promotions compliance assortment pricing days on hand",
+            state=payload.state,
+        )
         risks = self._detect_mode_risks(context_mode, context, data=payload.model_dump())
         inefficiencies = self._extract_inefficiencies(context_mode, data=payload.model_dump())
         return self._compose_response(

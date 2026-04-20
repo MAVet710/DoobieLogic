@@ -2,15 +2,15 @@ from __future__ import annotations
 
 
 def analyze_dosage_control(data: dict) -> dict:
-    variance = [float(x) for x in data.get("dosage_variance_pct", []) if x is not None]
-    qc = [float(x) for x in data.get("qc_pass_rate", []) if x is not None]
+    variance = [float(x) for x in data.get("dosage_variance_pct", []) if x not in (None, "")]
+    qc = [float(x) for x in data.get("qc_pass_rate", []) if x not in (None, "")]
     if not variance and not qc:
         return {"status": "skipped", "reason": "dosage/qc fields missing"}
     return {"status": "ok", "avg_dosage_variance_pct": round(sum(variance) / len(variance), 2) if variance else 0, "low_qc_rows": sum(1 for q in qc if q < 0.9)}
 
 
 def analyze_kitchen_throughput(data: dict) -> dict:
-    hours = [float(x) for x in data.get("production_hours", []) if x is not None]
+    hours = [float(x) for x in data.get("production_hours", []) if x not in (None, "")]
     if not hours:
         return {"status": "skipped", "reason": "production_hours missing"}
     return {"status": "ok", "avg_production_hours": round(sum(hours) / len(hours), 2)}

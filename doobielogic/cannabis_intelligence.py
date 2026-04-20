@@ -195,6 +195,22 @@ def _collect_relevant_rules(mode: str, modules: dict[str, Any]) -> list[str]:
     return relevant
 
 
+def _build_state_overlay(state: str | None, modules: dict[str, Any]) -> dict[str, Any]:
+    compliance = modules.get("compliance") if isinstance(modules.get("compliance"), dict) else {}
+    overlay_model = compliance.get("state_overlay_model", {}) if isinstance(compliance, dict) else {}
+    safe_state = (state or "").strip().upper()
+    if not safe_state:
+        return {"state": None, "note": "No state provided; using baseline conservative compliance guidance."}
+    return {
+        "state": safe_state,
+        "model": overlay_model,
+        "note": (
+            "State overlays are operational context only and not legal advice. "
+            "Verify against current regulator publications before action."
+        ),
+    }
+
+
 def _risk_flags(mode: str, inventory: dict[str, Any], extraction: dict[str, Any], data: dict[str, Any]) -> list[str]:
     flags: list[str] = []
 
@@ -248,7 +264,7 @@ def _risk_flags(mode: str, inventory: dict[str, Any], extraction: dict[str, Any]
     return flags
 
 
-def build_doobie_context(data: dict[str, Any] | None, mode: str, question: str | None = None) -> dict[str, Any]:
+def build_doobie_context(data: dict[str, Any] | None, mode: str, question: str | None = None, state: str | None = None) -> dict[str, Any]:
     data = data or {}
     safe_mode = mode if mode in MODE_TO_MODULES else "executive"
 
@@ -264,13 +280,14 @@ def build_doobie_context(data: dict[str, Any] | None, mode: str, question: str |
         "relevant_rules": _collect_relevant_rules(safe_mode, modules),
         "risk_flags": risk_flags,
         "selected_intelligence": _rank_intelligence(safe_mode, modules, question=question, data=data),
+        "state_overlay": _build_state_overlay(state, modules),
         "intel_modules": modules,
     }
     return context
 
 
 def build_ai_input(question: str, data: dict[str, Any] | None, mode: str, state: str | None = None) -> dict[str, Any]:
-    context = build_doobie_context(data=data, mode=mode, question=question)
+    context = build_doobie_context(data=data, mode=mode, question=question, state=state)
     return {
         "question": question,
         "state": state,
@@ -281,6 +298,7 @@ def build_ai_input(question: str, data: dict[str, Any] | None, mode: str, state:
             "relevant_rules": context["relevant_rules"],
             "risk_flags": context["risk_flags"],
             "selected_intelligence": context["selected_intelligence"],
+            "state_overlay": context["state_overlay"],
         },
         "intel_modules": context["intel_modules"],
     }

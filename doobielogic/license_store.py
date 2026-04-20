@@ -69,6 +69,9 @@ class LicenseStore:
         with self.path.open("w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2, sort_keys=True)
 
+    def diagnostic(self) -> dict[str, str]:
+        return {"backend": "local_json", "path": str(self.path)}
+
     def list_customers(self) -> list[Customer]:
         data = self._load()
         return [Customer.from_dict(row) for row in data.get("customers", [])]
@@ -226,7 +229,10 @@ class LicenseStore:
 
             expires_at = target.get("expires_at")
             if expires_at:
-                expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+                try:
+                    expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+                except ValueError:
+                    return {"valid": False, "reason": "invalid_expiration_format"}
                 if expiry <= datetime.now(timezone.utc):
                     target["status"] = "expired"
                     self._save(data)
@@ -250,4 +256,5 @@ class LicenseStore:
                 "status": "active",
                 "expires_at": target.get("expires_at"),
                 "features": PLAN_FEATURES.get(plan_type, {}),
+                "diagnostic": self.diagnostic(),
             }

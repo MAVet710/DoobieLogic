@@ -8,6 +8,7 @@ import streamlit as st
 
 from doobielogic.admin_gateway import AdminGateway, AdminGatewayError
 from doobielogic.admin_auth import load_admin_auth_config, verify_admin_credentials
+from doobielogic.config import load_doobie_config
 from doobielogic.license_models import ALLOWED_PLAN_TYPES
 from doobielogic.ui_theme import apply_buyer_dashboard_theme, render_page_hero, section_close, section_open
 
@@ -103,7 +104,26 @@ except AdminGatewayError as exc:
     st.error(f"Storage/backend configuration error: {exc}")
     st.stop()
 
-st.caption(f"Storage mode: `{gateway.storage_diagnostic().get('mode')}`")
+config = load_doobie_config()
+diagnostic = gateway.storage_diagnostic()
+mode = diagnostic.get("mode")
+
+if mode == "remote_api":
+    st.info(f"Backend mode: **REMOTE API** (`{diagnostic.get('base_url')}`)")
+else:
+    st.success("Backend mode: **LOCAL** (file/db direct access)")
+
+if config.diagnostics()["warnings"]:
+    st.warning("Configuration warnings: " + ", ".join(config.diagnostics()["warnings"]))
+
+with st.expander("Backend / storage diagnostics", expanded=False):
+    st.json({"config": config.diagnostics(), "gateway": diagnostic})
+    if st.button("Test connectivity", key="test_connectivity"):
+        try:
+            st.json(gateway.test_connectivity())
+            st.success("Connectivity test succeeded.")
+        except AdminGatewayError as exc:
+            st.error(f"Connectivity test failed: {exc}")
 
 if st.button("Log out", key="admin_logout"):
     st.session_state["admin_authenticated"] = False
@@ -166,16 +186,19 @@ with tab_license:
                 customer_id = created_customer.customer_id
 
         if customer_id:
-            license_obj = gateway.create_license(
-                customer_id=customer_id,
-                plan_type=plan_type,
-                expires_at=expiration_date.isoformat() if has_expiration else None,
-            )
-            st.session_state["latest_license_key"] = {
-                "record_id": license_obj.customer_id,
-                "raw_key": license_obj.license_key,
-            }
-            st.success("License key generated and persisted to license store.")
+            try:
+                license_obj = gateway.create_license(
+                    customer_id=customer_id,
+                    plan_type=plan_type,
+                    expires_at=expiration_date.isoformat() if has_expiration else None,
+                )
+                st.session_state["latest_license_key"] = {
+                    "record_id": license_obj.customer_id,
+                    "raw_key": license_obj.license_key,
+                }
+                st.success("License key generated and persisted to the active source of truth.")
+            except (ValueError, AdminGatewayError) as exc:
+                st.error(f"License creation failed: {exc}")
 
     _render_latest_generated_key("latest_license_key", kind="License")
     section_close()
@@ -206,18 +229,21 @@ with tab_api:
         if not company_name.strip() or not label.strip() or not scope.strip():
             st.error("Company, label, and scope are required.")
         else:
-            generated = gateway.create_api_key(
-                company_name=company_name,
-                label=label,
-                scope=scope,
-                expiration_date=expiration_date if has_expiration else None,
-                notes=notes,
-            )
-            st.session_state["latest_api_key"] = {
-                "record_id": generated.record_id,
-                "raw_key": generated.raw_key,
-            }
-            st.success("Service API key generated.")
+            try:
+                generated = gateway.create_api_key(
+                    company_name=company_name,
+                    label=label,
+                    scope=scope,
+                    expiration_date=expiration_date if has_expiration else None,
+                    notes=notes,
+                )
+                st.session_state["latest_api_key"] = {
+                    "record_id": generated.record_id,
+                    "raw_key": generated.raw_key,
+                }
+                st.success("Service API key generated in the active backend.")
+            except (ValueError, AdminGatewayError) as exc:
+                st.error(f"API key creation failed: {exc}")
 
     _render_latest_generated_key("latest_api_key", kind="Service API Key")
     section_close()
@@ -315,32 +341,44 @@ with tab_manage:
                 save_meta = st.form_submit_button("Save metadata")
 
             if save_meta:
-                gateway.update_api_key_metadata(
-                    selected_record["id"],
-                    label=new_label,
-                    tier_or_scope=new_scope,
-                    expires_at=new_expiration or None,
-                    notes=new_notes,
-                )
-                st.success("Metadata updated.")
-                st.rerun()
+                try:
+                    gateway.update_api_key_metadata(
+                        selected_record["id"],
+                        label=new_label,
+                        tier_or_scope=new_scope,
+                        expires_at=new_expiration or None,
+                        notes=new_notes,
+                    )
+                    st.success("Metadata updated.")
+                    st.rerun()
+                except (ValueError, AdminGatewayError) as exc:
+                    st.error(f"Failed to update metadata: {exc}")
 
             col1, col2, col3 = st.columns(3)
             with col1:
                 if st.button("Revoke key", key=f"revoke_api_{selected_record['id']}"):
-                    gateway.revoke_api_key(selected_record["id"])
-                    st.success("Key revoked.")
-                    st.rerun()
+                    try:
+                        gateway.revoke_api_key(selected_record["id"])
+                        st.success("Key revoked.")
+                        st.rerun()
+                    except (ValueError, AdminGatewayError) as exc:
+                        st.error(f"Failed to revoke key: {exc}")
             with col2:
                 if st.button("Enable key", key=f"enable_api_{selected_record['id']}"):
-                    gateway.toggle_api_key_status(selected_record["id"], is_active=True)
-                    st.success("Key enabled.")
-                    st.rerun()
+                    try:
+                        gateway.toggle_api_key_status(selected_record["id"], is_active=True)
+                        st.success("Key enabled.")
+                        st.rerun()
+                    except (ValueError, AdminGatewayError) as exc:
+                        st.error(f"Failed to enable key: {exc}")
             with col3:
                 if st.button("Disable key", key=f"disable_api_{selected_record['id']}"):
-                    gateway.toggle_api_key_status(selected_record["id"], is_active=False)
-                    st.success("Key disabled.")
-                    st.rerun()
+                    try:
+                        gateway.toggle_api_key_status(selected_record["id"], is_active=False)
+                        st.success("Key disabled.")
+                        st.rerun()
+                    except (ValueError, AdminGatewayError) as exc:
+                        st.error(f"Failed to disable key: {exc}")
         else:
             st.info("No API keys found. Generate an API key first.")
 
@@ -364,14 +402,19 @@ with tab_validate:
                 "reason": "missing_key",
             }
         else:
-            st.session_state["latest_license_validation_result"] = gateway.validate_license(license_key)
+            try:
+                st.session_state["latest_license_validation_result"] = gateway.validate_license(license_key)
+            except AdminGatewayError as exc:
+                st.session_state["latest_license_validation_result"] = {"valid": False, "reason": "backend_unavailable", "detail": str(exc)}
 
     license_result = st.session_state.get("latest_license_validation_result")
     if isinstance(license_result, dict):
         if license_result.get("valid"):
             st.success("License is valid.")
         else:
-            st.error(f"Invalid license: {license_result.get('reason', 'unknown')}")
+            reason = str(license_result.get("reason", "unknown"))
+            detail = str(license_result.get("detail") or "")
+            st.error(f"Invalid license: {reason}" + (f" ({detail})" if detail else ""))
         st.json(license_result)
 
     st.divider()
@@ -381,14 +424,19 @@ with tab_validate:
         check_api = st.form_submit_button("Validate API key")
 
     if check_api:
-        st.session_state["latest_api_validation_result"] = gateway.validate_api_key(api_key)
+        try:
+            st.session_state["latest_api_validation_result"] = gateway.validate_api_key(api_key)
+        except AdminGatewayError as exc:
+            st.session_state["latest_api_validation_result"] = {"valid": False, "reason": "backend_unavailable", "detail": str(exc)}
 
     api_result = st.session_state.get("latest_api_validation_result")
     if isinstance(api_result, dict):
         if api_result.get("valid"):
             st.success("API key is valid.")
         else:
-            st.error(f"Invalid API key: {api_result.get('reason', 'unknown')}")
+            reason = str(api_result.get("reason", "unknown"))
+            detail = str(api_result.get("detail") or "")
+            st.error(f"Invalid API key: {reason}" + (f" ({detail})" if detail else ""))
         st.json(api_result)
 
     section_close()

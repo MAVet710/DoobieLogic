@@ -39,7 +39,10 @@ def _normalize_expiration(expires_at: str | None) -> str | None:
 def _is_expired(expires_at: str | None) -> bool:
     if not expires_at:
         return False
-    parsed = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+    try:
+        parsed = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+    except ValueError:
+        return True
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed <= datetime.now(timezone.utc)
@@ -92,6 +95,9 @@ class KeyStore:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_key_records_company ON key_records(company_name)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_key_records_created ON key_records(created_at)")
             conn.commit()
+
+    def diagnostic(self) -> dict[str, str]:
+        return {"backend": "local_sqlite", "path": str(self.path)}
 
     def generate_license_key(self) -> str:
         return f"DLB-LIC-{secrets.token_urlsafe(24)}"
@@ -286,7 +292,15 @@ class KeyStore:
     def validate_api_key(self, input_key: str) -> dict[str, Any]:
         safe_key = (input_key or "").strip()
         if not safe_key:
-            return {"valid": False, "reason": "missing_key", "company": None, "scope": None, "expires_at": None, "expires": None}
+            return {
+                "valid": False,
+                "reason": "missing_key",
+                "company": None,
+                "scope": None,
+                "expires_at": None,
+                "expires": None,
+                "diagnostic": self.diagnostic(),
+            }
         key_digest = hash_key(safe_key)
         with self._connect() as conn:
             row = conn.execute(
@@ -294,17 +308,49 @@ class KeyStore:
                 (KEY_TYPE_API, key_digest),
             ).fetchone()
         if not row:
-            return {"valid": False, "reason": "not_found", "company": None, "scope": None, "expires_at": None, "expires": None}
+            return {
+                "valid": False,
+                "reason": "not_found",
+                "company": None,
+                "scope": None,
+                "expires_at": None,
+                "expires": None,
+                "diagnostic": self.diagnostic(),
+            }
 
         record = dict(row)
         expires_at = record.get("expires_at")
         if int(record.get("is_revoked") or 0) == 1:
-            return {"valid": False, "reason": "revoked", "company": record["company_name"], "scope": record["tier_or_scope"], "expires_at": expires_at, "expires": expires_at}
+            return {
+                "valid": False,
+                "reason": "revoked",
+                "company": record["company_name"],
+                "scope": record["tier_or_scope"],
+                "expires_at": expires_at,
+                "expires": expires_at,
+                "diagnostic": self.diagnostic(),
+            }
         if int(record.get("is_active") or 0) != 1:
-            return {"valid": False, "reason": "disabled", "company": record["company_name"], "scope": record["tier_or_scope"], "expires_at": expires_at, "expires": expires_at}
+            return {
+                "valid": False,
+                "reason": "disabled",
+                "company": record["company_name"],
+                "scope": record["tier_or_scope"],
+                "expires_at": expires_at,
+                "expires": expires_at,
+                "diagnostic": self.diagnostic(),
+            }
         if _is_expired(expires_at):
             self.toggle_key_status(record["id"], is_active=False)
-            return {"valid": False, "reason": "expired", "company": record["company_name"], "scope": record["tier_or_scope"], "expires_at": expires_at, "expires": expires_at}
+            return {
+                "valid": False,
+                "reason": "expired",
+                "company": record["company_name"],
+                "scope": record["tier_or_scope"],
+                "expires_at": expires_at,
+                "expires": expires_at,
+                "diagnostic": self.diagnostic(),
+            }
 
         return {
             "valid": True,
@@ -316,4 +362,5 @@ class KeyStore:
             "key_id": record["id"],
             "label": record["label"],
             "permissions": [scope.strip() for scope in str(record["tier_or_scope"]).split(",") if scope.strip()],
+            "diagnostic": self.diagnostic(),
         }
