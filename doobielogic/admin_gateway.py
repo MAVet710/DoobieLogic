@@ -20,7 +20,22 @@ class AdminGatewayHttpError(AdminGatewayError):
         self.status_code = int(status_code)
         self.path = path
         self.detail = detail
+        self.error_category = self._categorize_error(self.status_code)
         super().__init__(f"Admin API request failed ({status_code}) for {path}: {detail}")
+
+    @staticmethod
+    def _categorize_error(status_code: int) -> str:
+        if status_code == 404:
+            return "route_missing"
+        if status_code == 401:
+            return "unauthorized"
+        if status_code == 403:
+            return "forbidden"
+        if status_code >= 500:
+            return "server_error"
+        if status_code >= 400:
+            return "client_error"
+        return "unknown"
 
 
 class AdminGateway:
@@ -35,6 +50,7 @@ class AdminGateway:
         self.config = config or load_doobie_config()
         self.remote_base_url = self.config.admin_api_base_url
         self.admin_api_key = self.config.admin_api_key
+        self.service_api_key = self.config.api_key
         self.timeout_seconds = self.config.admin_api_timeout
 
         if self.remote_base_url:
@@ -52,6 +68,7 @@ class AdminGateway:
                 "mode": self.mode,
                 "base_url": self.remote_base_url,
                 "admin_api_key_configured": bool(self.admin_api_key),
+                "service_api_key_configured": bool(self.service_api_key),
                 "source_of_truth": "remote_api",
             }
         return {
@@ -64,7 +81,7 @@ class AdminGateway:
     def test_connectivity(self) -> dict[str, Any]:
         if self.mode == "local":
             return {"ok": True, "mode": "local", "detail": "Local mode uses direct file/database access."}
-        health = self._request("GET", "/health")
+        health = self._request("GET", "/health", require_admin_auth=False)
         return {
             "ok": True,
             "mode": self.mode,
@@ -73,6 +90,60 @@ class AdminGateway:
             "remote_backend": health.get("backend_mode"),
             "remote_license_store": health.get("license_store"),
             "remote_key_store": health.get("key_store"),
+        }
+
+    def admin_diagnostics(self, *, bootstrap_status: dict[str, Any] | None = None) -> dict[str, Any]:
+        if self.mode == "local":
+            return {
+                "mode": "local",
+                "admin_api_base_url": None,
+                "admin_api_key_configured": bool(self.admin_api_key),
+                "service_api_key_configured": bool(self.service_api_key),
+                "health": {"status": "local_mode"},
+                "bootstrap_routes_available": True,
+                "customers_route_available": True,
+                "likely_deployment_mismatch": False,
+            }
+
+        def _probe(path: str, *, require_admin_auth: bool = True) -> dict[str, Any]:
+            try:
+                payload = self._request("GET", path, require_admin_auth=require_admin_auth)
+                return {"available": True, "status_code": 200, "detail": "ok", "payload_preview": str(payload)[:200]}
+            except AdminGatewayHttpError as exc:
+                return {
+                    "available": False,
+                    "status_code": exc.status_code,
+                    "path": exc.path,
+                    "detail": exc.detail,
+                    "error_category": exc.error_category,
+                }
+            except AdminGatewayError as exc:
+                return {"available": False, "status_code": None, "detail": str(exc), "error_category": "network_or_config"}
+
+        health_probe = _probe("/health", require_admin_auth=False)
+        bootstrap_probe = bootstrap_status if isinstance(bootstrap_status, dict) and bootstrap_status else _probe(
+            "/api/v1/admin/bootstrap/status", require_admin_auth=False
+        )
+        customers_probe = _probe("/api/v1/admin/customers", require_admin_auth=True)
+
+        bootstrap_available = bool(bootstrap_probe.get("bootstrap_routes_available", bootstrap_probe.get("available", True)))
+        customers_available = bool(customers_probe.get("available", True))
+        likely_deployment_mismatch = (
+            bool(bootstrap_probe.get("backend_compatibility") == "missing_bootstrap_routes")
+            or int(customers_probe.get("status_code") or 0) == 404
+        )
+
+        return {
+            "mode": self.mode,
+            "admin_api_base_url": self.remote_base_url,
+            "admin_api_key_configured": bool(self.admin_api_key),
+            "service_api_key_configured": bool(self.service_api_key),
+            "health": health_probe,
+            "bootstrap": bootstrap_probe,
+            "customers": customers_probe,
+            "bootstrap_routes_available": bootstrap_available,
+            "customers_route_available": customers_available,
+            "likely_deployment_mismatch": likely_deployment_mismatch,
         }
 
     def _admin_headers(self) -> dict[str, str]:
@@ -248,7 +319,6 @@ class AdminGateway:
             json_payload={"record_id": record_id, "is_active": is_active},
         )
         return True
-
 
     def bootstrap_status(self) -> dict[str, Any]:
         if self.mode == "local":
