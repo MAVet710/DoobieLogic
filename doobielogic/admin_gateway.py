@@ -15,6 +15,14 @@ class AdminGatewayError(RuntimeError):
     pass
 
 
+class AdminGatewayHttpError(AdminGatewayError):
+    def __init__(self, *, status_code: int, path: str, detail: str):
+        self.status_code = int(status_code)
+        self.path = path
+        self.detail = detail
+        super().__init__(f"Admin API request failed ({status_code}) for {path}: {detail}")
+
+
 class AdminGateway:
     """Unified admin storage gateway.
 
@@ -97,7 +105,7 @@ class AdminGateway:
                 detail = str(body.get("detail") or body)
             except Exception:
                 detail = resp.text
-            raise AdminGatewayError(f"Admin API request failed ({resp.status_code}) for {path}: {detail}")
+            raise AdminGatewayHttpError(status_code=resp.status_code, path=path, detail=detail)
 
         return resp.json()
 
@@ -245,12 +253,32 @@ class AdminGateway:
     def bootstrap_status(self) -> dict[str, Any]:
         if self.mode == "local":
             assert self.key_store is not None
+            has_admin_key = self.key_store.has_active_admin_key()
             return {
-                "bootstrap_mode": not self.key_store.has_active_admin_key(),
+                "bootstrap_mode": not has_admin_key,
                 "admin_api_key_configured": bool(self.admin_api_key),
-                "admin_key_source": "key_store" if self.key_store.has_active_admin_key() else "none",
+                "admin_key_source": "key_store" if has_admin_key else "none",
+                "bootstrap_routes_available": True,
+                "backend_compatibility": "ok",
             }
-        return self._request("GET", "/api/v1/admin/bootstrap/status", require_admin_auth=False)
+
+        try:
+            payload = self._request("GET", "/api/v1/admin/bootstrap/status", require_admin_auth=False)
+        except AdminGatewayHttpError as exc:
+            if exc.status_code == 404:
+                return {
+                    "bootstrap_mode": None,
+                    "admin_api_key_configured": bool(self.admin_api_key),
+                    "admin_key_source": "unknown",
+                    "bootstrap_routes_available": False,
+                    "backend_compatibility": "missing_bootstrap_routes",
+                    "compatibility_warning": "Remote API bootstrap routes are not available on the current backend deployment.",
+                }
+            raise
+
+        payload.setdefault("bootstrap_routes_available", True)
+        payload.setdefault("backend_compatibility", "ok")
+        return payload
 
     def bootstrap_generate_initial_admin_key(self, *, label: str, notes: str = "") -> GeneratedKey:
         if self.mode == "local":
@@ -258,12 +286,22 @@ class AdminGateway:
             if self.key_store.has_active_admin_key():
                 raise AdminGatewayError("Bootstrap unavailable: an admin API key already exists.")
             return self.key_store.create_admin_api_key(label=label, notes=notes, is_bootstrap=True)
-        payload = self._request(
-            "POST",
-            "/api/v1/admin/bootstrap/generate",
-            json_payload={"label": label, "notes": notes},
-            require_admin_auth=False,
-        )
+
+        try:
+            payload = self._request(
+                "POST",
+                "/api/v1/admin/bootstrap/generate",
+                json_payload={"label": label, "notes": notes},
+                require_admin_auth=False,
+            )
+        except AdminGatewayHttpError as exc:
+            if exc.status_code == 404:
+                raise AdminGatewayError(
+                    "Bootstrap endpoint is unavailable on the remote backend. Deploy a backend that includes "
+                    "/api/v1/admin/bootstrap/status and /api/v1/admin/bootstrap/generate."
+                ) from exc
+            raise
+
         return GeneratedKey(record_id=payload["record_id"], raw_key=payload["raw_key"], key_preview=payload["key_preview"])
 
     def create_admin_api_key(
