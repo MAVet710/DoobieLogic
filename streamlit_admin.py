@@ -6,6 +6,7 @@ import streamlit as st
 
 from doobielogic.admin_gateway import AdminGateway, AdminGatewayError
 from doobielogic.admin_auth import load_admin_auth_config, verify_admin_credentials
+from doobielogic.config import load_doobie_config, resolve_doobie_config_source
 from doobielogic.license_models import ALLOWED_PLAN_TYPES
 from doobielogic.ui_theme import apply_buyer_dashboard_theme, render_page_hero, section_close, section_open
 
@@ -52,8 +53,10 @@ def _admin_authenticated() -> bool:
 if not _admin_authenticated():
     st.stop()
 
+runtime_config_source = resolve_doobie_config_source(secrets=st.secrets if hasattr(st, "secrets") else None, env=os.environ)
+
 try:
-    gateway = AdminGateway()
+    gateway = AdminGateway(config=load_doobie_config(runtime_config_source))
 except AdminGatewayError as exc:
     st.error(f"Storage/backend configuration error: {exc}")
     st.stop()

@@ -2,6 +2,24 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import Mapping
+
+DOOBIE_CONFIG_KEYS: tuple[str, ...] = (
+    "DOOBIE_ADMIN_API_BASE_URL",
+    "DOOBIE_ADMIN_API_TIMEOUT",
+    "DOOBIE_BACKEND_MODE",
+    "DOOBIE_STRICT_CONFIG",
+    "DOOBIE_API_KEY",
+    "ADMIN_API_KEY",
+    "DOOBIE_LICENSE_STORE",
+    "DOOBIE_KEY_DB",
+    "DOOBIE_KEY_VALIDATION_TOKEN",
+    "DOOBIE_ENV",
+    "RENDER",
+    "RENDER_SERVICE_NAME",
+    "RENDER_EXTERNAL_URL",
+    "RENDER_GIT_COMMIT",
+)
 
 
 def _parse_bool(value: str | None) -> bool:
@@ -9,7 +27,7 @@ def _parse_bool(value: str | None) -> bool:
     return safe in {"1", "true", "yes", "on"}
 
 
-def _is_production_like_env(source: dict[str, str]) -> bool:
+def _is_production_like_env(source: Mapping[str, str]) -> bool:
     doobie_env = (source.get("DOOBIE_ENV") or "").strip().lower()
     if doobie_env in {"prod", "production", "staging"}:
         return True
@@ -28,6 +46,47 @@ def _resolve_backend_mode(preferred_mode: str, base_url: str) -> tuple[str, str]
     if normalized_mode == "local":
         return "local", "explicit"
     raise ValueError(f"Unsupported DOOBIE_BACKEND_MODE: {preferred_mode!r}. Use one of: auto, local, remote_api.")
+
+
+def _extract_known_keys(source: Mapping[str, object] | None) -> dict[str, str]:
+    if not source:
+        return {}
+
+    extracted: dict[str, str] = {}
+    for key in DOOBIE_CONFIG_KEYS:
+        value = source.get(key)
+        if value is None:
+            continue
+        safe_value = str(value).strip()
+        if safe_value:
+            extracted[key] = safe_value
+    return extracted
+
+
+def _streamlit_secrets_source() -> dict[str, str]:
+    try:
+        import streamlit as st  # type: ignore
+    except Exception:
+        return {}
+
+    try:
+        return _extract_known_keys(st.secrets if hasattr(st, "secrets") else None)
+    except Exception:
+        return {}
+
+
+def resolve_doobie_config_source(
+    explicit: Mapping[str, str] | None = None,
+    *,
+    secrets: Mapping[str, object] | None = None,
+    env: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Build a single config source with precedence explicit > secrets > env."""
+    merged: dict[str, str] = {}
+    merged.update(_extract_known_keys(env if env is not None else os.environ))
+    merged.update(_extract_known_keys(secrets if secrets is not None else _streamlit_secrets_source()))
+    merged.update(_extract_known_keys(explicit))
+    return merged
 
 
 @dataclass(frozen=True)
@@ -82,8 +141,8 @@ class DoobieConfig:
         }
 
 
-def load_doobie_config(env: dict[str, str] | None = None) -> DoobieConfig:
-    source = env if env is not None else os.environ
+def load_doobie_config(env: Mapping[str, str] | None = None) -> DoobieConfig:
+    source = resolve_doobie_config_source(env)
     base_url = (source.get("DOOBIE_ADMIN_API_BASE_URL") or "").strip().rstrip("/")
     timeout_raw = (source.get("DOOBIE_ADMIN_API_TIMEOUT") or "12").strip()
     try:
