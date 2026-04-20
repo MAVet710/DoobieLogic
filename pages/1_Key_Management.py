@@ -119,22 +119,51 @@ config = load_doobie_config()
 diagnostic = gateway.storage_diagnostic()
 mode = diagnostic.get("mode")
 bootstrap = gateway.bootstrap_status()
+bootstrap_routes_available = bool(bootstrap.get("bootstrap_routes_available", True))
+bootstrap_mode = bootstrap.get("bootstrap_mode")
+backend_compatibility = str(bootstrap.get("backend_compatibility") or "ok")
 
 if mode == "remote_api":
     st.info(f"Backend mode: **REMOTE API** (`{diagnostic.get('base_url')}`)")
 else:
     st.success("Backend mode: **LOCAL** (file/db direct access)")
 
-if bootstrap.get("bootstrap_mode"):
+if not bootstrap_routes_available:
+    st.warning(
+        "Remote API bootstrap routes are not available on the current backend deployment. "
+        "The page will continue to load, but initial bootstrap key generation requires a backend redeploy."
+    )
+elif bootstrap_mode is True:
     st.warning("No persistent admin API key exists yet. Bootstrap mode is active for initial admin-key creation.")
-else:
+elif bootstrap_mode is False:
     st.success(f"Admin API key source: **{bootstrap.get('admin_key_source', 'unknown')}**")
+else:
+    st.info("Bootstrap status is unavailable. Verify backend compatibility and connectivity.")
+
+if mode == "remote_api" and not bootstrap_routes_available:
+    st.info(
+        "Compatibility note: this Streamlit UI expects `/api/v1/admin/bootstrap/status` and "
+        "`/api/v1/admin/bootstrap/generate`, but the current backend appears older."
+    )
 
 if config.diagnostics()["warnings"]:
     st.warning("Configuration warnings: " + ", ".join(config.diagnostics()["warnings"]))
 
 with st.expander("Backend / storage diagnostics", expanded=False):
-    st.json({"config": config.diagnostics(), "gateway": diagnostic, "bootstrap": bootstrap})
+    st.json(
+        {
+            "config": config.diagnostics(),
+            "gateway": diagnostic,
+            "bootstrap": bootstrap,
+            "ui_diagnostics": {
+                "mode": mode,
+                "bootstrap_routes_available": bootstrap_routes_available,
+                "persistent_admin_key_exists": (bootstrap_mode is False) if bootstrap_mode is not None else None,
+                "bootstrap_mode": bootstrap_mode,
+                "backend_compatibility": backend_compatibility,
+            },
+        }
+    )
     if st.button("Test connectivity", key="test_connectivity"):
         try:
             st.json(gateway.test_connectivity())
@@ -227,7 +256,7 @@ with tab_api:
         "Admin API keys authenticate internal admin automation. Service API keys authenticate server-to-server product integrations."
     )
 
-    if bootstrap.get("bootstrap_mode"):
+    if bootstrap_routes_available and bootstrap_mode is True:
         st.info("Bootstrap is active: generate the initial persistent admin API key here.")
         with st.form("bootstrap_admin_key"):
             label = st.text_input("Bootstrap key label", value="Initial Bootstrap Admin Key")
@@ -241,6 +270,14 @@ with tab_api:
                 st.rerun()
             except AdminGatewayError as exc:
                 st.error(f"Bootstrap failed: {exc}")
+
+    if mode == "remote_api" and not bootstrap_routes_available:
+        st.warning("Initial admin-key bootstrap is blocked: backend is missing bootstrap endpoints.")
+        st.markdown(
+            "**Next step:** Redeploy the FastAPI backend from this repository version so it includes\n"
+            "`GET /api/v1/admin/bootstrap/status` and `POST /api/v1/admin/bootstrap/generate`.\n\n"
+            "After redeploy, refresh this page and use **Generate Initial Admin API Key**."
+        )
 
     st.markdown("#### Generate additional admin API key")
     with st.form("generate_admin_api_key"):
