@@ -1,21 +1,46 @@
 {
   "module": "buyer_intel",
-  "version": "1.0",
+  "version": "1.1",
   "inventory_logic": {
     "metrics": {
       "days_on_hand": "current_inventory_units / average_daily_units_sold",
       "velocity": "units_sold_last_30d / 30",
-      "sell_through_rate": "units_sold / (units_sold + ending_inventory)"
+      "sell_through_rate": "units_sold / (units_sold + ending_inventory)",
+      "gross_margin_return_on_inventory": "gross_margin_dollars / avg_inventory_cost"
     },
     "thresholds": {
       "doh_low_risk": {"max": 14, "risk": "restock_risk"},
-      "doh_high_risk": {"min": 75, "risk": "dead_inventory_risk"}
+      "doh_high_risk": {"min": 75, "risk": "dead_inventory_risk"},
+      "aging_watch_days": 90,
+      "velocity_watch_units_per_day": 0.3
     },
     "rules": [
       {"id": "buyer_doh_low", "if": "days_on_hand < 14", "then": "flag_restock_risk"},
       {"id": "buyer_doh_high", "if": "days_on_hand > 75", "then": "flag_dead_inventory_risk"},
-      {"id": "buyer_low_sellthrough", "if": "sell_through_rate < 0.3", "then": "consider_markdown_or_assortment_change"}
+      {"id": "buyer_low_sellthrough", "if": "sell_through_rate < 0.3", "then": "consider_markdown_or_assortment_change"},
+      {"id": "buyer_aging_exposure", "if": "inventory_age_days > 90", "then": "route_to_markdown_or_transfer"}
     ]
+  },
+  "assortment_strategy": {
+    "menu_architecture": {
+      "depth_vs_breadth": [
+        "Protect depth in top doors and top categories before adding tails.",
+        "Breadth should be added only when adjacency gaps clearly suppress conversion."
+      ],
+      "price_ladder": ["opening_price_point", "core_mid_tier", "premium_anchor"],
+      "brand_mix_guardrails": {
+        "max_brand_share_per_category": 0.35,
+        "minimum_active_brands_per_key_category": 3
+      }
+    },
+    "sku_rationalization": {
+      "signals": ["low_velocity_tail", "duplicate_positioning", "promo_dependency", "high_return_rate"],
+      "actions": ["delist", "markdown_then_exit", "transfer_to_high_velocity_store", "relaunch_with_new_price_position"]
+    },
+    "category_gap_logic": {
+      "if": "missing_price_tier_or_format_in_top_category",
+      "then": "prioritize_new_sku_or_vendor_search"
+    }
   },
   "pricing_logic": {
     "margin_targets": {
@@ -25,26 +50,47 @@
       "vape": {"min_percent": 42, "target_percent": 55},
       "edible": {"min_percent": 50, "target_percent": 62}
     },
+    "promo_planning": {
+      "guardrails": [
+        "Avoid promotions without inventory exit or traffic objective.",
+        "Require post-promo uplift vs margin sacrifice check.",
+        "Use staggered markdown ladders before destructive deep discounting."
+      ],
+      "markdown_ladder": [
+        {"step": 1, "discount_pct": 10, "review_days": 7},
+        {"step": 2, "discount_pct": 15, "review_days": 7},
+        {"step": 3, "discount_pct": 20, "review_days": 5}
+      ]
+    },
     "discount_impact": {
       "formula": "new_margin = (price*(1-discount)-cost)/max(price*(1-discount),0.01)",
       "warning_rule": "if new_margin < min_margin_target then promo_is_margin_destructive"
     }
   },
-  "product_mix": {
-    "category_balancing": [
-      "avoid_single_category_over_40_percent_of_shelf",
-      "maintain_opening_price_point_mid_tier_premium_in_each_key_category"
-    ],
-    "sku_saturation": {
-      "rule": "if skus_in_category > velocity_supported_capacity then flag_sku_saturation",
-      "symptoms": ["low_turn_tail", "promo_dependency", "duplicate_positioning"]
-    }
-  },
   "vendor_logic": {
-    "quality_indicators": ["coa_pass_rate", "defect_rate", "consumer_return_rate", "on_time_fill_rate"],
+    "evaluation_scorecard": [
+      "on_time_fill_rate",
+      "cost_stability",
+      "defect_or_return_rate",
+      "coa_pass_rate",
+      "promo_support_quality"
+    ],
+    "case_pack_and_moq": {
+      "considerations": ["velocity_fit", "shelf_life_risk", "cash_lockup", "storage_footprint"],
+      "warning": "case_pack_units > 45_day_demand should trigger reduction or phased buys"
+    },
     "pricing_consistency": {
       "rule": "stddev(unit_cost_last_8_orders) > tolerance => investigate_vendor_pricing_drift",
       "tolerance_percent": 12
+    }
+  },
+  "product_lifecycle": {
+    "stages": ["launch", "scale", "steady_state", "decline_or_replace"],
+    "stage_signals": {
+      "launch": ["high_trial", "volatile_sellthrough"],
+      "scale": ["repeat_purchase_up", "stockout_pressure"],
+      "steady_state": ["stable_turns", "predictable_margin"],
+      "decline_or_replace": ["sellthrough_decay", "discount_dependency"]
     }
   }
 }

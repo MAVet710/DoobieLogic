@@ -12,13 +12,38 @@ INTEL_FILES = {
     "compliance": "compliance_intel.json",
     "taxonomy": "product_taxonomy.json",
     "financial": "financial_intel.json",
+    "operations": "operations_intel.json",
 }
 
+MODE_TO_MODULES = {
+    "buyer": {"buyer", "taxonomy", "financial", "compliance"},
+    "inventory": {"buyer", "taxonomy", "financial"},
+    "retail_ops": {"operations", "buyer", "taxonomy", "financial", "compliance"},
+    "extraction": {"extraction", "operations", "taxonomy", "financial", "compliance"},
+    "cultivation": {"operations", "taxonomy", "compliance", "financial"},
+    "kitchen": {"operations", "taxonomy", "compliance", "financial"},
+    "packaging": {"operations", "taxonomy", "compliance", "financial"},
+    "compliance": {"compliance", "operations", "taxonomy"},
+    "financial": {"financial", "buyer", "extraction", "operations", "taxonomy"},
+    "executive": set(INTEL_FILES.keys()),
+    "ops": {"operations", "compliance", "financial"},
+}
 
-# TODO: Add vector embedding index over intel modules for semantic retrieval.
-# TODO: Add model fine-tuning hooks that learn weighting of rules over time.
-# TODO: Add feedback-learning loop to reinforce high-quality recommendations.
-# TODO: Add persistent storage backend when module versions need environment-specific overrides.
+ROLE_KEYWORDS = {
+    "buyer": {"assortment", "vendor", "margin", "velocity", "doh", "promo", "sku", "pricing"},
+    "inventory": {"stock", "doh", "reorder", "aging", "overstock", "velocity"},
+    "retail_ops": {"conversion", "atv", "upt", "staff", "queue", "throughput", "discount", "stockout"},
+    "extraction": {"yield", "biomass", "solvent", "throughput", "rework", "residual", "batch", "formulation"},
+    "cultivation": {"canopy", "harvest", "room", "phenotype", "microbial", "cure", "trim", "cycle"},
+    "kitchen": {"infusion", "dosage", "batch", "sanitation", "allergen", "cooling", "traceability"},
+    "packaging": {"label", "lot", "reconciliation", "line", "qa", "tamper", "child", "rework"},
+    "compliance": {"traceability", "audit", "capa", "manifest", "storage", "transfer", "variance"},
+    "financial": {"margin", "cash", "working", "markdown", "carrying", "roi", "capital"},
+    "executive": {"kpi", "capital", "risk", "bottleneck", "accountability", "leverage", "scaling"},
+    "ops": {"execution", "bottleneck", "ownership", "cadence", "throughput"},
+}
+
+RISK_TERMS = {"risk", "fail", "failure", "variance", "aging", "stockout", "hold", "rework", "compliance"}
 
 
 def _safe_float(value: Any) -> float | None:
@@ -98,26 +123,84 @@ def _build_extraction_summary(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _flatten_items(module_key: str, prefix: str, node: Any) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            rows.extend(_flatten_items(module_key, f"{prefix}.{key}" if prefix else key, value))
+    elif isinstance(node, list):
+        for idx, value in enumerate(node):
+            rows.extend(_flatten_items(module_key, f"{prefix}[{idx}]", value))
+    else:
+        text = str(node)
+        rows.append({"module": module_key, "path": prefix, "text": text, "search_blob": f"{prefix} {text}".lower()})
+    return rows
+
+
+def _extract_topic_terms(question: str | None, data: dict[str, Any], mode: str) -> set[str]:
+    terms = {str(k).lower() for k in data.keys()}
+    q = (question or "").lower()
+    terms.update(token.strip(".,:;()[]{}") for token in q.split() if token)
+    terms.update(ROLE_KEYWORDS.get(mode, set()))
+    return {t for t in terms if t}
+
+
+def _rank_intelligence(mode: str, modules: dict[str, Any], question: str | None, data: dict[str, Any], limit: int = 14) -> list[dict[str, str]]:
+    topic_terms = _extract_topic_terms(question, data, mode)
+    scored: list[tuple[int, dict[str, str]]] = []
+    for module_key, payload in modules.items():
+        for row in _flatten_items(module_key, "", payload):
+            blob = row["search_blob"]
+            score = 0
+            if module_key in MODE_TO_MODULES.get(mode, set()):
+                score += 3
+            for term in topic_terms:
+                if term and term in blob:
+                    score += 2
+            if any(term in blob for term in RISK_TERMS):
+                score += 1
+            if "trigger" in blob or "threshold" in blob or "rule" in blob or "heuristic" in blob:
+                score += 1
+            if score > 0:
+                scored.append((score, row))
+    scored.sort(key=lambda item: item[0], reverse=True)
+
+    selected: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for score, row in scored:
+        key = (row["module"], row["path"], row["text"])
+        if key in seen:
+            continue
+        seen.add(key)
+        selected.append({"module": row["module"], "path": row["path"], "value": row["text"], "score": str(score)})
+        if len(selected) >= limit:
+            break
+    return selected
+
+
 def _collect_relevant_rules(mode: str, modules: dict[str, Any]) -> list[str]:
     relevant: list[str] = []
-    if mode in {"buyer", "executive"} and "buyer" in modules:
+    if mode in {"buyer", "inventory", "retail_ops", "executive"} and "buyer" in modules:
         rules = modules["buyer"].get("inventory_logic", {}).get("rules", [])
         relevant.extend([str(rule.get("id")) for rule in rules if isinstance(rule, dict)])
-    if mode in {"extraction", "executive"} and "financial" in modules:
+    if mode in {"extraction", "financial", "executive"} and "financial" in modules:
         rel = modules["financial"].get("yield_to_profit_relationships", [])
         relevant.extend([str(rule.get("id")) for rule in rel if isinstance(rule, dict)])
-    if mode in {"compliance", "executive"} and "compliance" in modules:
+    if mode in {"compliance", "packaging", "kitchen", "retail_ops", "executive"} and "compliance" in modules:
         hl = modules["compliance"].get("high_level_rules", [])
         relevant.extend([str(rule.get("id")) for rule in hl if isinstance(rule, dict)])
+    if mode in {"retail_ops", "cultivation", "kitchen", "packaging", "executive"} and "operations" in modules:
+        dept_rules = modules["operations"].get(mode, {}).get("escalation_triggers", [])
+        relevant.extend([str(rule.get("id")) for rule in dept_rules if isinstance(rule, dict)])
     return relevant
 
 
-def _risk_flags(mode: str, inventory: dict[str, Any], extraction: dict[str, Any]) -> list[str]:
+def _risk_flags(mode: str, inventory: dict[str, Any], extraction: dict[str, Any], data: dict[str, Any]) -> list[str]:
     flags: list[str] = []
 
     doh = inventory.get("days_on_hand")
     sell_through = inventory.get("sell_through_rate")
-    if mode in {"buyer", "executive"}:
+    if mode in {"buyer", "inventory", "retail_ops", "executive", "financial"}:
         if isinstance(doh, (float, int)) and doh < 14:
             flags.append("Low DOH indicates restock risk.")
         if isinstance(doh, (float, int)) and doh > 75:
@@ -126,31 +209,53 @@ def _risk_flags(mode: str, inventory: dict[str, Any], extraction: dict[str, Any]
             flags.append("Low sell-through indicates potential assortment or pricing mismatch.")
 
     run_yield = extraction.get("yield_percent")
-    if mode in {"extraction", "executive"}:
+    if mode in {"extraction", "executive", "financial"}:
         if isinstance(run_yield, (float, int)) and run_yield < 8:
             flags.append("Low extraction yield suggests process inefficiency or weak input quality.")
         if extraction.get("failed_batches", 0) > 0:
             flags.append("Failed batches detected; investigate QA release and stage controls.")
 
+    if mode in {"retail_ops", "executive"}:
+        if _safe_float(data.get("conversion_rate")) is not None and float(data.get("conversion_rate")) < 0.18:
+            flags.append("Conversion rate below operating threshold.")
+        if _safe_float(data.get("discount_rate")) is not None and float(data.get("discount_rate")) > 0.18:
+            flags.append("Discount rate above guardrail; margin quality risk.")
+
+    if mode in {"cultivation", "executive"}:
+        micro = sum(1 for x in data.get("microbial_risk_flag", []) if bool(x))
+        moisture = sum(1 for x in data.get("moisture_risk_flag", []) if bool(x))
+        if micro > 0:
+            flags.append("Microbial risk flags detected in cultivation runs.")
+        if moisture > 0:
+            flags.append("Moisture risk flags indicate cure instability risk.")
+
+    if mode in {"kitchen", "executive"}:
+        if _safe_float(data.get("dosage_variance_pct")) and float(data.get("dosage_variance_pct")) > 10:
+            flags.append("Dosage variance exceeds tolerance and may require hold/rework.")
+        if sum(1 for x in data.get("sanitation_gap_flag", []) if bool(x)) > 0:
+            flags.append("Sanitation gap flags raise release risk.")
+
+    if mode in {"packaging", "executive", "compliance"}:
+        if sum(1 for x in data.get("label_error_flag", []) if bool(x)) > 0:
+            flags.append("Label error events create compliance and recall exposure.")
+        if any(abs(float(x)) > 2 for x in data.get("reconciliation_variance", []) if x is not None):
+            flags.append("High reconciliation variance detected in packaging records.")
+
+    if mode in {"compliance", "executive"}:
+        if any(float(x) > 30 for x in data.get("open_days", []) if x is not None):
+            flags.append("Aging CAPAs increase audit and operating risk.")
+
     return flags
 
 
-def build_doobie_context(data: dict[str, Any] | None, mode: str) -> dict[str, Any]:
+def build_doobie_context(data: dict[str, Any] | None, mode: str, question: str | None = None) -> dict[str, Any]:
     data = data or {}
-    safe_mode = mode if mode in {"buyer", "extraction", "compliance", "executive", "financial"} else "executive"
+    safe_mode = mode if mode in MODE_TO_MODULES else "executive"
 
-    module_selection = {
-        "buyer": {"buyer", "taxonomy", "financial", "compliance"},
-        "extraction": {"extraction", "taxonomy", "financial", "compliance"},
-        "compliance": {"compliance", "taxonomy"},
-        "financial": {"financial", "buyer", "extraction", "taxonomy"},
-        "executive": set(INTEL_FILES.keys()),
-    }
-
-    modules = load_intel_modules(module_selection[safe_mode])
+    modules = load_intel_modules(MODE_TO_MODULES[safe_mode])
     inventory_summary = _build_inventory_summary(data)
     extraction_summary = _build_extraction_summary(data)
-    risk_flags = _risk_flags(safe_mode, inventory_summary, extraction_summary)
+    risk_flags = _risk_flags(safe_mode, inventory_summary, extraction_summary, data=data)
 
     context = {
         "mode": safe_mode,
@@ -158,13 +263,14 @@ def build_doobie_context(data: dict[str, Any] | None, mode: str) -> dict[str, An
         "extraction_summary": extraction_summary,
         "relevant_rules": _collect_relevant_rules(safe_mode, modules),
         "risk_flags": risk_flags,
+        "selected_intelligence": _rank_intelligence(safe_mode, modules, question=question, data=data),
         "intel_modules": modules,
     }
     return context
 
 
 def build_ai_input(question: str, data: dict[str, Any] | None, mode: str, state: str | None = None) -> dict[str, Any]:
-    context = build_doobie_context(data=data, mode=mode)
+    context = build_doobie_context(data=data, mode=mode, question=question)
     return {
         "question": question,
         "state": state,
@@ -174,6 +280,7 @@ def build_ai_input(question: str, data: dict[str, Any] | None, mode: str, state:
             "extraction_summary": context["extraction_summary"],
             "relevant_rules": context["relevant_rules"],
             "risk_flags": context["risk_flags"],
+            "selected_intelligence": context["selected_intelligence"],
         },
         "intel_modules": context["intel_modules"],
     }
