@@ -10,7 +10,7 @@ from doobielogic.copilot import DoobieCopilot
 from doobielogic.config import load_doobie_config
 from doobielogic.evals import apply_low_confidence_fallback
 from doobielogic.intelligence_v3 import build_intel_v3
-from doobielogic.key_management import KeyStore
+from doobielogic.key_management import KEY_ROLE_ADMIN, KEY_ROLE_SERVICE, KeyStore
 from doobielogic.learning_store_v1 import log_event, summarize_learning
 from doobielogic.license_store import LicenseStore
 
@@ -93,6 +93,17 @@ class ApiKeyGenerateReq(BaseModel):
     notes: str = ""
 
 
+class AdminBootstrapGenerateReq(BaseModel):
+    label: str = "Initial Bootstrap Admin Key"
+    notes: str = ""
+
+
+class AdminApiKeyGenerateReq(BaseModel):
+    label: str
+    expires_at: str | None = None
+    notes: str = ""
+
+
 class ApiKeyRecordReq(BaseModel):
     record_id: str
 
@@ -158,7 +169,7 @@ def require_service_auth(
             detail="Missing service API key. Provide x-api-key or Authorization: Bearer <service-key>.",
         )
 
-    result = KEY_STORE.validate_api_key(safe_key)
+    result = KEY_STORE.validate_api_key(safe_key, expected_role=KEY_ROLE_SERVICE)
     if not result.get("valid"):
         reason = str(result.get("reason") or "invalid")
         if reason == "not_found":
@@ -176,7 +187,12 @@ def require_service_auth(
 
 def admin_auth(authorization: str | None) -> None:
     token = _parse_bearer(authorization)
-    if ADMIN_API_KEY and token != ADMIN_API_KEY:
+    if not token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if ADMIN_API_KEY and token == ADMIN_API_KEY:
+        return
+    result = KEY_STORE.validate_admin_key(token)
+    if not result.get("valid"):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
@@ -325,6 +341,27 @@ def admin_validate_license(req: LicenseValidateReq, authorization: str | None = 
     return result
 
 
+
+
+@app.get("/api/v1/admin/bootstrap/status")
+def admin_bootstrap_status() -> dict[str, Any]:
+    has_admin_key = KEY_STORE.has_active_admin_key()
+    return {
+        "bootstrap_mode": not has_admin_key,
+        "admin_api_key_configured": bool(ADMIN_API_KEY),
+        "admin_key_source": "env" if ADMIN_API_KEY else ("key_store" if has_admin_key else "none"),
+    }
+
+
+@app.post("/api/v1/admin/bootstrap/generate")
+def admin_bootstrap_generate(req: AdminBootstrapGenerateReq) -> dict[str, Any]:
+    if ADMIN_API_KEY:
+        raise HTTPException(status_code=409, detail="Bootstrap disabled: ADMIN_API_KEY env is already configured")
+    if KEY_STORE.has_active_admin_key():
+        raise HTTPException(status_code=409, detail="Bootstrap disabled: an admin API key already exists")
+    generated = KEY_STORE.create_admin_api_key(label=req.label, notes=req.notes, is_bootstrap=True)
+    return {"record_id": generated.record_id, "raw_key": generated.raw_key, "key_preview": generated.key_preview}
+
 @app.post("/api/v1/admin/customers")
 def admin_create_customer(req: CustomerCreateReq, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     admin_auth(authorization)
@@ -388,9 +425,18 @@ def admin_generate_api_key(req: ApiKeyGenerateReq, authorization: str | None = H
         company_name=req.company_name,
         label=req.label,
         scope=req.scope,
-        expiration_date=None if not req.expires_at else None,
+        expiration_date=None,
         notes=req.notes,
     )
+    if req.expires_at:
+        KEY_STORE.update_key_metadata(generated.record_id, expires_at=req.expires_at)
+    return {"record_id": generated.record_id, "raw_key": generated.raw_key, "key_preview": generated.key_preview}
+
+
+@app.post("/api/v1/admin/api-keys/admin/generate")
+def admin_generate_admin_api_key(req: AdminApiKeyGenerateReq, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin_auth(authorization)
+    generated = KEY_STORE.create_admin_api_key(label=req.label, notes=req.notes, is_bootstrap=False)
     if req.expires_at:
         KEY_STORE.update_key_metadata(generated.record_id, expires_at=req.expires_at)
     return {"record_id": generated.record_id, "raw_key": generated.raw_key, "key_preview": generated.key_preview}
@@ -402,7 +448,16 @@ def admin_list_api_keys(
     search: str | None = None,
 ) -> dict[str, Any]:
     admin_auth(authorization)
-    return {"keys": KEY_STORE.load_key_records(key_type="api", search=search)}
+    return {"keys": KEY_STORE.load_key_records(key_type="api", key_role=KEY_ROLE_SERVICE, search=search)}
+
+
+@app.get("/api/v1/admin/api-keys/admin")
+def admin_list_admin_api_keys(
+    authorization: str | None = Header(default=None),
+    search: str | None = None,
+) -> dict[str, Any]:
+    admin_auth(authorization)
+    return {"keys": KEY_STORE.load_key_records(key_type="api", key_role=KEY_ROLE_ADMIN, search=search)}
 
 
 @app.post("/api/v1/admin/api-keys/revoke")

@@ -28,7 +28,8 @@ def _ensure_session_state() -> None:
     defaults: dict[str, Any] = {
         "admin_authenticated": False,
         "latest_license_key": None,
-        "latest_api_key": None,
+        "latest_service_api_key": None,
+        "latest_admin_api_key": None,
         "latest_license_validation_result": None,
         "latest_api_validation_result": None,
     }
@@ -93,6 +94,16 @@ def _admin_authenticated() -> bool:
     return False
 
 
+def _status_tag(record: dict[str, Any]) -> str:
+    if int(record.get("is_revoked") or 0) == 1:
+        return "revoked"
+    if int(record.get("is_active") or 0) != 1:
+        return "disabled"
+    if record.get("expires_at"):
+        return "active/expiring"
+    return "active"
+
+
 _ensure_session_state()
 
 if not _admin_authenticated():
@@ -107,17 +118,23 @@ except AdminGatewayError as exc:
 config = load_doobie_config()
 diagnostic = gateway.storage_diagnostic()
 mode = diagnostic.get("mode")
+bootstrap = gateway.bootstrap_status()
 
 if mode == "remote_api":
     st.info(f"Backend mode: **REMOTE API** (`{diagnostic.get('base_url')}`)")
 else:
     st.success("Backend mode: **LOCAL** (file/db direct access)")
 
+if bootstrap.get("bootstrap_mode"):
+    st.warning("No persistent admin API key exists yet. Bootstrap mode is active for initial admin-key creation.")
+else:
+    st.success(f"Admin API key source: **{bootstrap.get('admin_key_source', 'unknown')}**")
+
 if config.diagnostics()["warnings"]:
     st.warning("Configuration warnings: " + ", ".join(config.diagnostics()["warnings"]))
 
 with st.expander("Backend / storage diagnostics", expanded=False):
-    st.json({"config": config.diagnostics(), "gateway": diagnostic})
+    st.json({"config": config.diagnostics(), "gateway": diagnostic, "bootstrap": bootstrap})
     if st.button("Test connectivity", key="test_connectivity"):
         try:
             st.json(gateway.test_connectivity())
@@ -130,13 +147,13 @@ if st.button("Log out", key="admin_logout"):
     st.rerun()
 
 tab_license, tab_api, tab_manage, tab_validate = st.tabs(
-    ["Create License Key", "Service API Keys", "Manage Keys", "Validate Keys"]
+    ["Customer License Keys", "Admin + Service API Keys", "Manage Keys", "Validate Keys"]
 )
 
 with tab_license:
     section_open()
     st.subheader("Generate Customer License Key")
-    st.caption("Buyer Dashboard customers should use license keys. This is the system of record for customer entitlement.")
+    st.caption("Customer license keys are used by Buyer Dashboard customers for entitlement and plan validation.")
 
     customers = gateway.list_customers()
     customer_lookup = {f"{c.company_name} ({c.customer_id})": c for c in customers}
@@ -200,18 +217,67 @@ with tab_license:
             except (ValueError, AdminGatewayError) as exc:
                 st.error(f"License creation failed: {exc}")
 
-    _render_latest_generated_key("latest_license_key", kind="License")
+    _render_latest_generated_key("latest_license_key", kind="Customer License Key")
     section_close()
 
 with tab_api:
     section_open()
-    st.subheader("Generate Service/API Key")
+    st.subheader("Admin + Service API Key Generation")
     st.caption(
-        "Service API keys are for server-to-server access to DoobieLogic endpoints. "
-        "They are not customer license keys."
+        "Admin API keys authenticate internal admin automation. Service API keys authenticate server-to-server product integrations."
     )
 
-    with st.form("generate_api_key"):
+    if bootstrap.get("bootstrap_mode"):
+        st.info("Bootstrap is active: generate the initial persistent admin API key here.")
+        with st.form("bootstrap_admin_key"):
+            label = st.text_input("Bootstrap key label", value="Initial Bootstrap Admin Key")
+            notes = st.text_area("Bootstrap notes", value="Created from Streamlit admin bootstrap flow")
+            bootstrap_create = st.form_submit_button("Generate Initial Admin API Key")
+        if bootstrap_create:
+            try:
+                generated = gateway.bootstrap_generate_initial_admin_key(label=label, notes=notes)
+                st.session_state["latest_admin_api_key"] = {"record_id": generated.record_id, "raw_key": generated.raw_key}
+                st.success("Initial admin API key created and persisted.")
+                st.rerun()
+            except AdminGatewayError as exc:
+                st.error(f"Bootstrap failed: {exc}")
+
+    st.markdown("#### Generate additional admin API key")
+    with st.form("generate_admin_api_key"):
+        admin_label = st.text_input("Admin key label", value="Admin automation key")
+        admin_has_expiration = st.checkbox("Set expiration date", value=False, key="admin_api_has_expiration")
+        admin_expiration_date = st.date_input(
+            "Expiration date",
+            value=date.today(),
+            disabled=not admin_has_expiration,
+            key="admin_api_expiration",
+        )
+        admin_notes = st.text_area("Notes", key="admin_api_notes")
+        admin_submitted = st.form_submit_button("Generate Admin API Key")
+
+    if admin_submitted:
+        if not admin_label.strip():
+            st.error("Admin key label is required.")
+        else:
+            try:
+                generated = gateway.create_admin_api_key(
+                    label=admin_label,
+                    expiration_date=admin_expiration_date if admin_has_expiration else None,
+                    notes=admin_notes,
+                )
+                st.session_state["latest_admin_api_key"] = {
+                    "record_id": generated.record_id,
+                    "raw_key": generated.raw_key,
+                }
+                st.success("Admin API key generated in the active backend.")
+            except (ValueError, AdminGatewayError) as exc:
+                st.error(f"Admin API key creation failed: {exc}")
+
+    _render_latest_generated_key("latest_admin_api_key", kind="Admin API Key")
+
+    st.divider()
+    st.markdown("#### Generate service API key")
+    with st.form("generate_service_api_key"):
         company_name = st.text_input("Company Name", key="api_company")
         label = st.text_input("Key label", key="api_label")
         scope = st.text_input("Access scope (comma separated)", value="buyer_dashboard", key="api_scope")
@@ -223,7 +289,7 @@ with tab_api:
             key="api_expiration",
         )
         notes = st.text_area("Notes", key="api_notes")
-        submitted = st.form_submit_button("Generate API Key")
+        submitted = st.form_submit_button("Generate Service API Key")
 
     if submitted:
         if not company_name.strip() or not label.strip() or not scope.strip():
@@ -237,23 +303,23 @@ with tab_api:
                     expiration_date=expiration_date if has_expiration else None,
                     notes=notes,
                 )
-                st.session_state["latest_api_key"] = {
+                st.session_state["latest_service_api_key"] = {
                     "record_id": generated.record_id,
                     "raw_key": generated.raw_key,
                 }
                 st.success("Service API key generated in the active backend.")
             except (ValueError, AdminGatewayError) as exc:
-                st.error(f"API key creation failed: {exc}")
+                st.error(f"Service API key creation failed: {exc}")
 
-    _render_latest_generated_key("latest_api_key", kind="Service API Key")
+    _render_latest_generated_key("latest_service_api_key", kind="Service API Key")
     section_close()
 
 with tab_manage:
     section_open()
-    manage_type = st.radio("Select record type", options=["Licenses", "Service API keys"], horizontal=True)
+    manage_type = st.radio("Select record type", options=["Licenses", "API keys"], horizontal=True)
 
     if manage_type == "Licenses":
-        st.subheader("License Inventory")
+        st.subheader("Customer License Inventory")
         licenses = gateway.list_licenses()
         customers = {c.customer_id: c for c in gateway.list_customers()}
 
@@ -304,22 +370,24 @@ with tab_manage:
             st.info("No licenses found. Generate a license first.")
 
     else:
-        st.subheader("Service API Key Inventory")
+        st.subheader("API Key Inventory (Persistent)")
         search = st.text_input("Search company / label / scope / notes")
-        records = gateway.load_api_key_records(search=search or None)
+        service_records = gateway.load_api_key_records(search=search or None)
+        admin_records = gateway.load_admin_api_key_records(search=search or None)
+        records = admin_records + service_records
 
         st.dataframe(
             [
                 {
                     "id": r["id"],
+                    "key_type": "admin" if r.get("key_role") == "admin" else "service",
+                    "bootstrap": "yes" if int(r.get("is_bootstrap") or 0) == 1 else "no",
                     "company": r["company_name"],
                     "label": r["label"],
                     "scope": r["tier_or_scope"],
-                    "created": r["created_at"],
-                    "expires": r["expires_at"],
-                    "status": "revoked"
-                    if int(r["is_revoked"] or 0) == 1
-                    else ("active" if int(r["is_active"] or 0) == 1 else "disabled"),
+                    "created_at": r["created_at"],
+                    "expires_at": r["expires_at"],
+                    "status": _status_tag(r),
                     "preview": f"...{r['key_preview']}",
                 }
                 for r in records
@@ -329,7 +397,7 @@ with tab_manage:
         )
 
         if records:
-            selectable = {f"{r['id']} | {r['company_name']} | ...{r['key_preview']}": r for r in records}
+            selectable = {f"{r['id']} | {r['label']} | ...{r['key_preview']}": r for r in records}
             selected = st.selectbox("Select key for actions", options=list(selectable.keys()))
             selected_record = selectable[selected]
 

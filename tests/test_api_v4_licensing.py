@@ -169,3 +169,52 @@ def test_admin_api_key_management_routes(monkeypatch, tmp_path):
 
     revoked = client.post("/api/v1/admin/api-keys/revoke", headers=headers, json={"record_id": rec_id})
     assert revoked.status_code == 200
+
+
+
+def test_bootstrap_admin_key_and_use_for_admin_routes(monkeypatch, tmp_path):
+    monkeypatch.setattr("doobielogic.api_v4.ADMIN_API_KEY", "")
+    monkeypatch.setattr("doobielogic.api_v4.KEY_STORE", KeyStore(path=tmp_path / "keys.db"))
+    monkeypatch.setattr("doobielogic.api_v4.LICENSE_STORE", LicenseStore(path=tmp_path / "store.json"))
+
+    status = client.get("/api/v1/admin/bootstrap/status")
+    assert status.status_code == 200
+    assert status.json()["bootstrap_mode"] is True
+
+    generated = client.post(
+        "/api/v1/admin/bootstrap/generate",
+        json={"label": "Initial Bootstrap Admin Key", "notes": "first-run"},
+    )
+    assert generated.status_code == 200
+    admin_key = generated.json()["raw_key"]
+
+    list_customers = client.get("/api/v1/admin/customers", headers={"Authorization": f"Bearer {admin_key}"})
+    assert list_customers.status_code == 200
+    assert list_customers.json() == {"customers": []}
+
+
+def test_bootstrap_closed_after_admin_key_exists(monkeypatch, tmp_path):
+    monkeypatch.setattr("doobielogic.api_v4.ADMIN_API_KEY", "")
+    monkeypatch.setattr("doobielogic.api_v4.KEY_STORE", KeyStore(path=tmp_path / "keys.db"))
+
+    first = client.post("/api/v1/admin/bootstrap/generate", json={"label": "Initial Bootstrap Admin Key", "notes": ""})
+    assert first.status_code == 200
+
+    second = client.post("/api/v1/admin/bootstrap/generate", json={"label": "Second", "notes": ""})
+    assert second.status_code == 409
+
+
+def test_service_endpoints_reject_admin_keys(monkeypatch, tmp_path):
+    monkeypatch.setattr("doobielogic.api_v4.ADMIN_API_KEY", "")
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
+    key_store = KeyStore(path=tmp_path / "keys.db")
+    monkeypatch.setattr("doobielogic.api_v4.KEY_STORE", key_store)
+
+    admin = key_store.create_admin_api_key(label="Admin")
+    res = client.post(
+        "/api/v1/license/validate",
+        headers={"Authorization": f"Bearer {admin.raw_key}"},
+        json={"license_key": "DB-TRIAL-XXXX-YYYY-ZZZZ"},
+    )
+    assert res.status_code == 401
+    assert "Invalid service API key" in res.json()["detail"]

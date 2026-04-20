@@ -12,6 +12,8 @@ from uuid import uuid4
 
 KEY_TYPE_LICENSE = "license"
 KEY_TYPE_API = "api"
+KEY_ROLE_SERVICE = "service"
+KEY_ROLE_ADMIN = "admin"
 
 
 def _utcnow_iso() -> str:
@@ -79,6 +81,8 @@ class KeyStore:
                     company_name TEXT NOT NULL,
                     label TEXT NOT NULL,
                     tier_or_scope TEXT NOT NULL,
+                    key_role TEXT NOT NULL DEFAULT 'service' CHECK(key_role IN ('service', 'admin')),
+                    is_bootstrap INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     expires_at TEXT,
                     is_active INTEGER NOT NULL DEFAULT 1,
@@ -91,9 +95,18 @@ class KeyStore:
                 )
                 """
             )
+            existing_cols = {str(row["name"]) for row in conn.execute("PRAGMA table_info(key_records)").fetchall()}
+            if "key_role" not in existing_cols:
+                conn.execute(
+                    "ALTER TABLE key_records ADD COLUMN key_role TEXT NOT NULL DEFAULT 'service' CHECK(key_role IN ('service', 'admin'))"
+                )
+            if "is_bootstrap" not in existing_cols:
+                conn.execute("ALTER TABLE key_records ADD COLUMN is_bootstrap INTEGER NOT NULL DEFAULT 0")
+
             conn.execute("CREATE INDEX IF NOT EXISTS idx_key_records_type ON key_records(key_type)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_key_records_company ON key_records(company_name)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_key_records_created ON key_records(created_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_key_records_role ON key_records(key_role)")
             conn.commit()
 
     def diagnostic(self) -> dict[str, str]:
@@ -105,6 +118,9 @@ class KeyStore:
     def generate_api_key(self) -> str:
         return f"DLB-API-{secrets.token_urlsafe(32)}"
 
+    def generate_admin_key(self) -> str:
+        return f"DLB-ADM-{secrets.token_urlsafe(32)}"
+
     def save_key_record(
         self,
         *,
@@ -113,6 +129,8 @@ class KeyStore:
         company_name: str,
         label: str,
         tier_or_scope: str,
+        key_role: str = KEY_ROLE_SERVICE,
+        is_bootstrap: bool = False,
         expires_at: str | None = None,
         trial: bool = False,
         max_users: int | None = None,
@@ -129,9 +147,9 @@ class KeyStore:
                 conn.execute(
                     """
                     INSERT INTO key_records (
-                        id, key_type, key_hash, key_preview, company_name, label, tier_or_scope, created_at,
+                        id, key_type, key_hash, key_preview, company_name, label, tier_or_scope, key_role, is_bootstrap, created_at,
                         expires_at, is_active, is_revoked, trial, max_users, notes, contact_email, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         record_id,
@@ -141,6 +159,8 @@ class KeyStore:
                         company_name.strip(),
                         label.strip(),
                         tier_or_scope.strip(),
+                        key_role,
+                        1 if is_bootstrap else 0,
                         now,
                         expires_iso,
                         1,
@@ -173,6 +193,7 @@ class KeyStore:
             company_name=company_name,
             label=f"{company_name.strip()} license",
             tier_or_scope=tier,
+            key_role=KEY_ROLE_SERVICE,
             expires_at=expiration_date.isoformat() if expiration_date else None,
             trial=trial,
             max_users=max_users,
@@ -197,18 +218,62 @@ class KeyStore:
             company_name=company_name,
             label=label,
             tier_or_scope=scope,
+            key_role=KEY_ROLE_SERVICE,
             expires_at=expiration_date.isoformat() if expiration_date else None,
             notes=notes,
         )
         return GeneratedKey(record_id=record_id, raw_key=raw_key, key_preview=raw_key[-8:])
 
-    def load_key_records(self, key_type: str | None = None, search: str | None = None) -> list[dict[str, Any]]:
+    def create_admin_api_key(
+        self,
+        *,
+        label: str,
+        notes: str = "",
+        expiration_date: date | None = None,
+        is_bootstrap: bool = False,
+    ) -> GeneratedKey:
+        raw_key = self.generate_admin_key()
+        record_id = self.save_key_record(
+            key_type=KEY_TYPE_API,
+            raw_key=raw_key,
+            company_name="DoobieLogic Admin",
+            label=label,
+            tier_or_scope="admin",
+            key_role=KEY_ROLE_ADMIN,
+            is_bootstrap=is_bootstrap,
+            expires_at=expiration_date.isoformat() if expiration_date else None,
+            notes=notes,
+        )
+        return GeneratedKey(record_id=record_id, raw_key=raw_key, key_preview=raw_key[-8:])
+
+    def has_active_admin_key(self) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT 1
+                FROM key_records
+                WHERE key_type = ? AND key_role = ? AND is_active = 1 AND is_revoked = 0
+                LIMIT 1
+                """,
+                (KEY_TYPE_API, KEY_ROLE_ADMIN),
+            ).fetchone()
+        return bool(row)
+
+    def load_key_records(
+        self,
+        key_type: str | None = None,
+        search: str | None = None,
+        key_role: str | None = None,
+    ) -> list[dict[str, Any]]:
         query = "SELECT * FROM key_records"
         filters: list[str] = []
         params: list[Any] = []
         if key_type:
             filters.append("key_type = ?")
             params.append(key_type)
+        if key_role:
+            filters.append("key_role = ?")
+            params.append(key_role)
         if search:
             filters.append("(LOWER(company_name) LIKE ? OR LOWER(label) LIKE ? OR LOWER(tier_or_scope) LIKE ? OR LOWER(notes) LIKE ?)")
             pattern = f"%{search.lower()}%"
@@ -289,7 +354,12 @@ class KeyStore:
                 conn.commit()
                 return result.rowcount > 0
 
-    def validate_api_key(self, input_key: str) -> dict[str, Any]:
+    def validate_api_key(
+        self,
+        input_key: str,
+        *,
+        expected_role: str | None = KEY_ROLE_SERVICE,
+    ) -> dict[str, Any]:
         safe_key = (input_key or "").strip()
         if not safe_key:
             return {
@@ -299,6 +369,7 @@ class KeyStore:
                 "scope": None,
                 "expires_at": None,
                 "expires": None,
+                "key_role": None,
                 "diagnostic": self.diagnostic(),
             }
         key_digest = hash_key(safe_key)
@@ -315,11 +386,26 @@ class KeyStore:
                 "scope": None,
                 "expires_at": None,
                 "expires": None,
+                "key_role": None,
                 "diagnostic": self.diagnostic(),
             }
 
         record = dict(row)
         expires_at = record.get("expires_at")
+        key_role = str(record.get("key_role") or KEY_ROLE_SERVICE)
+
+        if expected_role and key_role != expected_role:
+            return {
+                "valid": False,
+                "reason": "wrong_key_type",
+                "company": record["company_name"],
+                "scope": record["tier_or_scope"],
+                "expires_at": expires_at,
+                "expires": expires_at,
+                "key_role": key_role,
+                "diagnostic": self.diagnostic(),
+            }
+
         if int(record.get("is_revoked") or 0) == 1:
             return {
                 "valid": False,
@@ -328,6 +414,7 @@ class KeyStore:
                 "scope": record["tier_or_scope"],
                 "expires_at": expires_at,
                 "expires": expires_at,
+                "key_role": key_role,
                 "diagnostic": self.diagnostic(),
             }
         if int(record.get("is_active") or 0) != 1:
@@ -338,6 +425,7 @@ class KeyStore:
                 "scope": record["tier_or_scope"],
                 "expires_at": expires_at,
                 "expires": expires_at,
+                "key_role": key_role,
                 "diagnostic": self.diagnostic(),
             }
         if _is_expired(expires_at):
@@ -349,6 +437,7 @@ class KeyStore:
                 "scope": record["tier_or_scope"],
                 "expires_at": expires_at,
                 "expires": expires_at,
+                "key_role": key_role,
                 "diagnostic": self.diagnostic(),
             }
 
@@ -362,5 +451,10 @@ class KeyStore:
             "key_id": record["id"],
             "label": record["label"],
             "permissions": [scope.strip() for scope in str(record["tier_or_scope"]).split(",") if scope.strip()],
+            "key_role": key_role,
+            "is_bootstrap": bool(int(record.get("is_bootstrap") or 0)),
             "diagnostic": self.diagnostic(),
         }
+
+    def validate_admin_key(self, input_key: str) -> dict[str, Any]:
+        return self.validate_api_key(input_key, expected_role=KEY_ROLE_ADMIN)

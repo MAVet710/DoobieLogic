@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 
 from doobielogic.config import DoobieConfig, load_doobie_config
-from doobielogic.key_management import KEY_TYPE_API, GeneratedKey, KeyStore
+from doobielogic.key_management import KEY_ROLE_ADMIN, KEY_TYPE_API, GeneratedKey, KeyStore
 from doobielogic.license_models import Customer, License
 from doobielogic.license_store import LicenseStore
 
@@ -33,11 +33,6 @@ class AdminGateway:
             self.mode = "remote_api"
             self.license_store: LicenseStore | None = None
             self.key_store: KeyStore | None = None
-            if not self.admin_api_key:
-                raise AdminGatewayError(
-                    "remote_api mode is configured but ADMIN_API_KEY is missing. "
-                    "Set ADMIN_API_KEY or unset DOOBIE_ADMIN_API_BASE_URL."
-                )
         else:
             self.mode = "local"
             self.license_store = LicenseStore(path=self.config.license_store_path)
@@ -74,14 +69,22 @@ class AdminGateway:
 
     def _admin_headers(self) -> dict[str, str]:
         if not self.admin_api_key:
-            raise AdminGatewayError("ADMIN_API_KEY is required when DOOBIE_ADMIN_API_BASE_URL is configured.")
+            raise AdminGatewayError("ADMIN_API_KEY is required for this operation in remote_api mode.")
         return {"Authorization": f"Bearer {self.admin_api_key}"}
 
-    def _request(self, method: str, path: str, *, json_payload: dict[str, Any] | None = None) -> Any:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_payload: dict[str, Any] | None = None,
+        require_admin_auth: bool = True,
+    ) -> Any:
         url = f"{self.remote_base_url}{path}"
         try:
             with httpx.Client(timeout=self.timeout_seconds) as client:
-                resp = client.request(method, url, headers=self._admin_headers(), json=json_payload)
+                headers = self._admin_headers() if require_admin_auth else None
+                resp = client.request(method, url, headers=headers, json=json_payload)
         except httpx.TimeoutException as exc:
             raise AdminGatewayError(f"Admin API timeout reaching {url}") from exc
         except httpx.HTTPError as exc:
@@ -207,7 +210,7 @@ class AdminGateway:
     def load_api_key_records(self, search: str | None = None) -> list[dict[str, Any]]:
         if self.mode == "local":
             assert self.key_store is not None
-            return self.key_store.load_key_records(key_type=KEY_TYPE_API, search=search)
+            return self.key_store.load_key_records(key_type=KEY_TYPE_API, key_role="service", search=search)
         qs = f"?search={search}" if search else ""
         payload = self._request("GET", f"/api/v1/admin/api-keys{qs}")
         return list(payload.get("keys", []))
@@ -237,6 +240,65 @@ class AdminGateway:
             json_payload={"record_id": record_id, "is_active": is_active},
         )
         return True
+
+
+    def bootstrap_status(self) -> dict[str, Any]:
+        if self.mode == "local":
+            assert self.key_store is not None
+            return {
+                "bootstrap_mode": not self.key_store.has_active_admin_key(),
+                "admin_api_key_configured": bool(self.admin_api_key),
+                "admin_key_source": "key_store" if self.key_store.has_active_admin_key() else "none",
+            }
+        return self._request("GET", "/api/v1/admin/bootstrap/status", require_admin_auth=False)
+
+    def bootstrap_generate_initial_admin_key(self, *, label: str, notes: str = "") -> GeneratedKey:
+        if self.mode == "local":
+            assert self.key_store is not None
+            if self.key_store.has_active_admin_key():
+                raise AdminGatewayError("Bootstrap unavailable: an admin API key already exists.")
+            return self.key_store.create_admin_api_key(label=label, notes=notes, is_bootstrap=True)
+        payload = self._request(
+            "POST",
+            "/api/v1/admin/bootstrap/generate",
+            json_payload={"label": label, "notes": notes},
+            require_admin_auth=False,
+        )
+        return GeneratedKey(record_id=payload["record_id"], raw_key=payload["raw_key"], key_preview=payload["key_preview"])
+
+    def create_admin_api_key(
+        self,
+        *,
+        label: str,
+        notes: str = "",
+        expiration_date: date | None = None,
+    ) -> GeneratedKey:
+        if self.mode == "local":
+            assert self.key_store is not None
+            return self.key_store.create_admin_api_key(
+                label=label,
+                notes=notes,
+                expiration_date=expiration_date,
+                is_bootstrap=False,
+            )
+        payload = self._request(
+            "POST",
+            "/api/v1/admin/api-keys/admin/generate",
+            json_payload={
+                "label": label,
+                "expires_at": expiration_date.isoformat() if expiration_date else None,
+                "notes": notes,
+            },
+        )
+        return GeneratedKey(record_id=payload["record_id"], raw_key=payload["raw_key"], key_preview=payload["key_preview"])
+
+    def load_admin_api_key_records(self, search: str | None = None) -> list[dict[str, Any]]:
+        if self.mode == "local":
+            assert self.key_store is not None
+            return self.key_store.load_key_records(key_type=KEY_TYPE_API, key_role=KEY_ROLE_ADMIN, search=search)
+        qs = f"?search={search}" if search else ""
+        payload = self._request("GET", f"/api/v1/admin/api-keys/admin{qs}")
+        return list(payload.get("keys", []))
 
     def validate_api_key(self, api_key: str) -> dict[str, Any]:
         if self.mode == "local":
