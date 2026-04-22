@@ -72,6 +72,7 @@ Keys are generated server-side only, with random segments and plan prefix:
 ## Auth
 
 - Admin endpoints require `Authorization: Bearer <ADMIN_API_KEY>`.
+- Admin endpoints also accept `Authorization: Basic <base64(username:password)>` using the configured admin bcrypt credentials (`DOOBIE_ADMIN_USERNAME` + `DOOBIE_ADMIN_PASSWORD_HASH`) for compatibility.
 - Validation endpoint requires the standard Doobie service API key (`DOOBIE_API_KEY`) and accepts either:
   - `x-api-key: <DOOBIE_API_KEY>`
   - `Authorization: Bearer <DOOBIE_API_KEY>`

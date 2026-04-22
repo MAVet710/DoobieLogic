@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from base64 import b64decode
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException
@@ -10,6 +11,7 @@ from doobielogic.copilot import DoobieCopilot
 from doobielogic.config import load_doobie_config
 from doobielogic.evals import apply_low_confidence_fallback
 from doobielogic.intelligence_v3 import build_intel_v3
+from doobielogic.admin_auth import load_admin_auth_config, verify_admin_credentials
 from doobielogic.key_management import KEY_ROLE_ADMIN, KEY_ROLE_SERVICE, KeyStore
 from doobielogic.learning_store_v1 import log_event, summarize_learning
 from doobielogic.license_store import LicenseStore
@@ -133,6 +135,26 @@ def _parse_bearer(auth_header: str | None) -> str | None:
     return None
 
 
+def _parse_basic(auth_header: str | None) -> tuple[str, str] | None:
+    if not auth_header:
+        return None
+    safe = auth_header.strip()
+    prefix = "basic "
+    if not safe.lower().startswith(prefix):
+        return None
+    encoded = safe[len(prefix) :].strip()
+    if not encoded:
+        return None
+    try:
+        decoded = b64decode(encoded).decode("utf-8")
+    except Exception:
+        return None
+    if ":" not in decoded:
+        return None
+    username, password = decoded.split(":", 1)
+    return username, password
+
+
 def _resolve_service_key(x_api_key: str | None, authorization: str | None) -> str | None:
     if x_api_key and x_api_key.strip():
         return x_api_key.strip()
@@ -188,6 +210,13 @@ def require_service_auth(
 def admin_auth(authorization: str | None) -> None:
     token = _parse_bearer(authorization)
     if not token:
+        basic = _parse_basic(authorization)
+        if not basic:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        username, password = basic
+        auth_cfg = load_admin_auth_config(secrets=None, env=os.environ)
+        if verify_admin_credentials(username=username, password=password, config=auth_cfg):
+            return
         raise HTTPException(status_code=401, detail="Unauthorized")
     if ADMIN_API_KEY and token == ADMIN_API_KEY:
         return

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from datetime import date
 from typing import Any
 
@@ -50,6 +51,8 @@ class AdminGateway:
         self.config = config or load_doobie_config()
         self.remote_base_url = self.config.admin_api_base_url
         self.admin_api_key = self.config.admin_api_key
+        self.admin_basic_username: str | None = None
+        self.admin_basic_password: str | None = None
         self.service_api_key = self.config.api_key
         self.timeout_seconds = self.config.admin_api_timeout
 
@@ -65,6 +68,12 @@ class AdminGateway:
     def set_admin_api_key(self, admin_api_key: str | None) -> None:
         self.admin_api_key = (admin_api_key or "").strip()
 
+    def set_admin_basic_credentials(self, username: str | None, password: str | None) -> None:
+        safe_user = (username or "").strip()
+        safe_password = password or ""
+        self.admin_basic_username = safe_user or None
+        self.admin_basic_password = safe_password or None
+
     def has_admin_api_key(self) -> bool:
         return bool((self.admin_api_key or "").strip())
 
@@ -75,6 +84,7 @@ class AdminGateway:
                 "base_url": self.remote_base_url,
                 "admin_api_key_configured": bool(self.config.admin_api_key),
                 "admin_api_key_effective": bool(self.admin_api_key),
+                "admin_basic_auth_effective": bool(self.admin_basic_username and self.admin_basic_password),
                 "service_api_key_configured": bool(self.service_api_key),
                 "source_of_truth": "remote_api",
             }
@@ -154,9 +164,12 @@ class AdminGateway:
         }
 
     def _admin_headers(self) -> dict[str, str]:
-        if not self.admin_api_key:
-            raise AdminGatewayError("ADMIN_API_KEY is required for this operation in remote_api mode.")
-        return {"Authorization": f"Bearer {self.admin_api_key}"}
+        if self.admin_api_key:
+            return {"Authorization": f"Bearer {self.admin_api_key}"}
+        if self.admin_basic_username and self.admin_basic_password:
+            encoded = base64.b64encode(f"{self.admin_basic_username}:{self.admin_basic_password}".encode("utf-8")).decode("utf-8")
+            return {"Authorization": f"Basic {encoded}"}
+        raise AdminGatewayError("Admin API key or admin credentials are required for this operation in remote_api mode.")
 
     def _request(
         self,
