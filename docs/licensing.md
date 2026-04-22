@@ -25,9 +25,13 @@ DoobieLogic is the **license authority**. Buyer Dashboard validates licenses aga
 
 ## Storage
 
-- FastAPI remains the source of truth for license + service-key persistence.
-- License storage defaults to `data/license_store.json` and is configurable via `DOOBIE_LICENSE_STORE`.
-- Service API key storage defaults to `data/key_store.db` and is configurable via `DOOBIE_KEY_DB`.
+- FastAPI remains the source of truth for license + key persistence.
+- **Production/shared persistence** is configured via `DOOBIE_DATABASE_URL` (or `DATABASE_URL` / `POSTGRES_URL`) and should point to managed Postgres.
+- In managed-DB mode, customers, licenses, and API keys are stored in shared SQL tables so Streamlit and FastAPI instances read/write the same durable records.
+- Legacy local storage paths still exist for development fallback and migration:
+  - `DOOBIE_LICENSE_STORE` (legacy JSON source path; also used to choose local sqlite fallback file location)
+  - `DOOBIE_KEY_DB` (legacy local sqlite key DB)
+- On first startup with empty SQL tables, `LicenseStore` imports legacy `DOOBIE_LICENSE_STORE` JSON data automatically (non-destructive).
 - For split deployments, configure Streamlit admin with:
   - `DOOBIE_ADMIN_API_BASE_URL` (FastAPI base URL)
   - `ADMIN_API_KEY` (bearer token)
@@ -112,7 +116,10 @@ curl -X POST http://localhost:8000/api/v1/license/validate \
 - `DOOBIE_API_KEY`: service auth key expected in either:
   - `x-api-key: <DOOBIE_API_KEY>`
   - `Authorization: Bearer <DOOBIE_API_KEY>`
-- `DOOBIE_LICENSE_STORE` (optional): path to JSON license store (defaults to `data/license_store.json`).
+- `DOOBIE_DATABASE_URL` (recommended): managed Postgres URL used as shared source of truth.
+- `DATABASE_URL` / `POSTGRES_URL` can be used as compatibility aliases for `DOOBIE_DATABASE_URL`.
+- `DOOBIE_LICENSE_STORE` (optional): legacy JSON path for compatibility import + local fallback.
+- `DOOBIE_KEY_DB` (optional): legacy local sqlite key DB path for local-only mode.
 - `ADMIN_API_KEY` (optional): needed only for admin endpoints.
 
 ## Reset/Revoke behavior
