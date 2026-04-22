@@ -59,8 +59,8 @@ class AdminGateway:
             self.key_store: KeyStore | None = None
         else:
             self.mode = "local"
-            self.license_store = LicenseStore(path=self.config.license_store_path)
-            self.key_store = KeyStore(path=self.config.key_store_path)
+            self.license_store = LicenseStore(path=self.config.license_store_path, database_url=self.config.database_url)
+            self.key_store = KeyStore(path=self.config.key_store_path, database_url=self.config.database_url)
 
     def set_admin_api_key(self, admin_api_key: str | None) -> None:
         self.admin_api_key = (admin_api_key or "").strip()

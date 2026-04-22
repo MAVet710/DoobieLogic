@@ -5,3 +5,4 @@ pydantic>=2.7.0
 streamlit>=1.36.0
 
 bcrypt>=4.1.0
+psycopg[binary]>=3.2.0

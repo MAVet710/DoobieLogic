@@ -19,8 +19,8 @@ app = FastAPI(title="DoobieLogic API v4")
 CONFIG = load_doobie_config()
 API_KEY = CONFIG.api_key
 ADMIN_API_KEY = CONFIG.admin_api_key
-LICENSE_STORE = LicenseStore(path=CONFIG.license_store_path)
-KEY_STORE = KeyStore(path=CONFIG.key_store_path)
+LICENSE_STORE = LicenseStore(path=CONFIG.license_store_path, database_url=CONFIG.database_url)
+KEY_STORE = KeyStore(path=CONFIG.key_store_path, database_url=CONFIG.database_url)
 KEY_VALIDATION_TOKEN = CONFIG.key_validation_token
 COPILOT = DoobieCopilot()
 
