@@ -27,6 +27,8 @@ st.markdown(
 def _ensure_session_state() -> None:
     defaults: dict[str, Any] = {
         "admin_authenticated": False,
+        "admin_username": None,
+        "admin_password": None,
         "active_admin_api_key": None,
         "latest_license_key": None,
         "latest_service_api_key": None,
@@ -94,6 +96,8 @@ def _admin_authenticated() -> bool:
     if submitted:
         if verify_admin_credentials(username=username, password=provided, config=config):
             st.session_state["admin_authenticated"] = True
+            st.session_state["admin_username"] = username or config.username
+            st.session_state["admin_password"] = provided
             st.success("Authenticated.")
             st.rerun()
         else:
@@ -161,6 +165,10 @@ if mode == "remote_api":
     env_admin_key_configured = bool(config.admin_api_key)
     if not env_admin_key_configured and st.session_state.get("active_admin_api_key"):
         gateway.set_admin_api_key(st.session_state["active_admin_api_key"])
+    gateway.set_admin_basic_credentials(
+        st.session_state.get("admin_username"),
+        st.session_state.get("admin_password"),
+    )
 
 bootstrap, bootstrap_error = _safe_gateway_call("Bootstrap status", gateway.bootstrap_status, fallback={})
 bootstrap_routes_available = bool(bootstrap.get("bootstrap_routes_available", True))
@@ -261,6 +269,8 @@ with st.expander("Backend / storage diagnostics", expanded=False):
 
 if st.button("Log out", key="admin_logout"):
     st.session_state["admin_authenticated"] = False
+    st.session_state["admin_username"] = None
+    st.session_state["admin_password"] = None
     st.session_state["active_admin_api_key"] = None
     st.rerun()
 
