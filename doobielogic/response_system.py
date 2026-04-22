@@ -101,6 +101,14 @@ class StructuredResponse:
         return asdict(self)
 
 
+@dataclass
+class AnswerPlan:
+    conclusion: str
+    supporting_points: list[str]
+    next_step: str
+    response_shape: str
+
+
 def infer_confidence(
     has_structured_data: bool,
     has_grounding: bool,
@@ -128,17 +136,84 @@ def _clean_list(values: list[str] | None) -> list[str]:
     return cleaned
 
 
-def _format_explanation(mode: str, explanation_context: str, risk_flags: list[str], inefficiencies: list[str]) -> str:
-    config = RESPONSE_MODE_CONFIG.get(mode, RESPONSE_MODE_CONFIG["copilot"])
-    priorities = ", ".join(config["priorities"])
-    risk_text = ", ".join(risk_flags) if risk_flags else "none identified from current structured context"
-    inefficiency_text = ", ".join(inefficiencies) if inefficiencies else "none identified"
-    return (
-        f"Mode focus ({mode}): {priorities}.\n"
-        f"Operational context: {explanation_context}\n"
-        f"Risk flags: {risk_text}.\n"
-        f"Inefficiencies: {inefficiency_text}."
-    )
+def _build_citation_pool(evidence: list[dict[str, Any]] | None, limit: int = 4) -> list[str]:
+    refs: list[str] = []
+    for item in evidence or []:
+        label = str(item.get("citation") or "").strip()
+        if label and label not in refs:
+            refs.append(label)
+        if len(refs) >= limit:
+            break
+    return refs
+
+
+def _infer_response_shape(question: str, mode: str, risk_flags: list[str]) -> str:
+    q = (question or "").lower()
+    if any(token in q for token in ("checklist", "sop", "plan", "steps", "playbook")):
+        return "step_by_step"
+    if any(token in q for token in ("compare", "vs", "tradeoff")):
+        return "comparison"
+    if any(token in q for token in ("risk", "compliance", "audit")) or mode == "compliance" or len(risk_flags) >= 3:
+        return "risk_summary"
+    if any(token in q for token in ("report", "summary", "brief")):
+        return "structured_report"
+    return "natural_prose"
+
+
+def _plan_answer(
+    *,
+    question: str,
+    mode: str,
+    quick_answer: str,
+    recommendations: list[str],
+    risk_flags: list[str],
+    inefficiencies: list[str],
+    explanation_context: str,
+) -> AnswerPlan:
+    placeholder_markers = ("brief ready", "brief generated", "analysis prepared")
+    normalized_answer = quick_answer.strip()
+    if any(marker in normalized_answer.lower() for marker in placeholder_markers):
+        if risk_flags:
+            normalized_answer = f"Your top priority is to address {risk_flags[0].lower()} before scaling optimization work."
+        elif inefficiencies:
+            normalized_answer = f"The key fix is to remove this bottleneck first: {inefficiencies[0]}"
+        elif recommendations:
+            normalized_answer = recommendations[0]
+
+    support = []
+    if risk_flags:
+        support.append(f"Main risk signal: {risk_flags[0]}.")
+    if inefficiencies:
+        support.append(f"Efficiency drag to fix: {inefficiencies[0]}.")
+    if explanation_context:
+        support.append(explanation_context.split("\n")[0].strip())
+    if not support:
+        support.append("Current structured context is limited, so this answer stays conservative.")
+
+    next_step = recommendations[0] if recommendations else "Confirm the top bottleneck owner and run a same-week corrective action check."
+    shape = _infer_response_shape(question, mode, risk_flags)
+    return AnswerPlan(conclusion=normalized_answer, supporting_points=support[:3], next_step=next_step, response_shape=shape)
+
+
+def _render_explanation(plan: AnswerPlan, citations: list[str], recommendations: list[str]) -> str:
+    citation_text = " " + " ".join(citations) if citations else ""
+    if plan.response_shape in {"step_by_step", "structured_report"}:
+        steps = [f"{idx + 1}) {point}" for idx, point in enumerate(plan.supporting_points)]
+        steps.append(f"{len(steps) + 1}) Next step: {plan.next_step}")
+        return "\n".join(steps) + citation_text
+
+    if plan.response_shape == "comparison":
+        left = plan.supporting_points[0] if plan.supporting_points else "Current-state evidence is strongest."
+        right = plan.supporting_points[1] if len(plan.supporting_points) > 1 else "Alternative path has weaker evidence right now."
+        return f"Best path: {left} Alternative view: {right} Next step: {plan.next_step}.{citation_text}"
+
+    if plan.response_shape == "risk_summary":
+        detail = " ".join(plan.supporting_points)
+        return f"Risk view: {detail} Practical next step: {plan.next_step}.{citation_text}"
+
+    detail = " ".join(plan.supporting_points)
+    rec = recommendations[0] if recommendations else plan.next_step
+    return f"{detail} The most useful move now is: {rec}.{citation_text}"
 
 
 def _build_response(
@@ -150,15 +225,31 @@ def _build_response(
     inefficiencies: list[str] | None,
     confidence: str,
     sources: list[str] | None,
+    question: str = "",
+    evidence: list[dict[str, Any]] | None = None,
 ) -> StructuredResponse:
     clean_risks = _clean_list(risk_flags)
     clean_inefficiencies = _clean_list(inefficiencies)
+    clean_recommendations = _clean_list(recommendations)
+    citation_pool = _build_citation_pool(evidence)
+    plan = _plan_answer(
+        question=question,
+        mode=mode,
+        quick_answer=quick_answer,
+        recommendations=clean_recommendations,
+        risk_flags=clean_risks,
+        inefficiencies=clean_inefficiencies,
+        explanation_context=explanation_context.strip(),
+    )
+    explanation = _render_explanation(plan, citation_pool, clean_recommendations)
+    source_refs = _clean_list((sources or []) + citation_pool)
+
     return StructuredResponse(
-        answer=quick_answer.strip(),
-        explanation=_format_explanation(mode, explanation_context.strip(), clean_risks, clean_inefficiencies),
-        recommendations=_clean_list(recommendations),
+        answer=plan.conclusion,
+        explanation=explanation,
+        recommendations=clean_recommendations,
         confidence=confidence,
-        sources=_clean_list(sources),
+        sources=source_refs,
         mode=mode,
         risk_flags=clean_risks,
         inefficiencies=clean_inefficiencies,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
+from dataclasses import asdict, dataclass
 from typing import Any
 
 INTEL_DIR = Path(__file__).resolve().parent.parent / "intel"
@@ -44,6 +45,19 @@ ROLE_KEYWORDS = {
 }
 
 RISK_TERMS = {"risk", "fail", "failure", "variance", "aging", "stockout", "hold", "rework", "compliance"}
+
+
+@dataclass(frozen=True)
+class IntelligenceEvidence:
+    source_module: str
+    section: str
+    rule_id: str
+    value: str
+    relevance: float
+    citation: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 def _safe_float(value: Any) -> float | None:
@@ -123,17 +137,64 @@ def _build_extraction_summary(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _flatten_items(module_key: str, prefix: str, node: Any) -> list[dict[str, str]]:
-    rows: list[dict[str, str]] = []
+def _derive_rule_identifier(module_key: str, path: str, node: Any) -> str:
     if isinstance(node, dict):
+        for key in ("id", "rule_id", "identifier", "name", "title"):
+            raw = node.get(key)
+            if raw is not None and str(raw).strip():
+                return str(raw).strip()
+    stable = path.replace("[", ".").replace("]", "").replace("..", ".").strip(".")
+    return f"{module_key}:{stable or 'root'}"
+
+
+def _build_citation_label(module_key: str, section: str, rule_id: str) -> str:
+    section_slug = section.replace("[", ".").replace("]", "").replace("..", ".").strip(".") or "root"
+    clean_rule_id = rule_id
+    if clean_rule_id.startswith(f"{module_key}:"):
+        clean_rule_id = clean_rule_id[len(module_key) + 1 :]
+    return f"[{module_key}:{clean_rule_id}@{section_slug}]"
+
+
+def _flatten_items(module_key: str, prefix: str, node: Any) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if isinstance(node, dict):
+        blob_parts: list[str] = []
         for key, value in node.items():
-            rows.extend(_flatten_items(module_key, f"{prefix}.{key}" if prefix else key, value))
+            child_prefix = f"{prefix}.{key}" if prefix else key
+            rows.extend(_flatten_items(module_key, child_prefix, value))
+            if not isinstance(value, (dict, list)):
+                blob_parts.append(f"{key}:{value}")
+        if blob_parts:
+            section = prefix or "root"
+            text = "; ".join(blob_parts)
+            rule_id = _derive_rule_identifier(module_key, section, node)
+            rows.append(
+                {
+                    "module": module_key,
+                    "section": section,
+                    "rule_id": rule_id,
+                    "text": text,
+                    "search_blob": f"{module_key} {section} {text} {rule_id}".lower(),
+                    "citation": _build_citation_label(module_key, section, rule_id),
+                }
+            )
     elif isinstance(node, list):
         for idx, value in enumerate(node):
             rows.extend(_flatten_items(module_key, f"{prefix}[{idx}]", value))
     else:
-        text = str(node)
-        rows.append({"module": module_key, "path": prefix, "text": text, "search_blob": f"{prefix} {text}".lower()})
+        section = prefix or "root"
+        value = str(node)
+        rule_id = _derive_rule_identifier(module_key, section, node)
+        rows.append(
+            {
+                "module": module_key,
+                "section": section,
+                "rule_id": rule_id,
+                "text": value,
+                "search_blob": f"{module_key} {section} {value} {rule_id}".lower(),
+                "citation": _build_citation_label(module_key, section, rule_id),
+            }
+        )
     return rows
 
 
@@ -145,34 +206,43 @@ def _extract_topic_terms(question: str | None, data: dict[str, Any], mode: str) 
     return {t for t in terms if t}
 
 
-def _rank_intelligence(mode: str, modules: dict[str, Any], question: str | None, data: dict[str, Any], limit: int = 14) -> list[dict[str, str]]:
+def _rank_intelligence(mode: str, modules: dict[str, Any], question: str | None, data: dict[str, Any], limit: int = 14) -> list[IntelligenceEvidence]:
     topic_terms = _extract_topic_terms(question, data, mode)
-    scored: list[tuple[int, dict[str, str]]] = []
+    scored: list[tuple[float, dict[str, Any]]] = []
     for module_key, payload in modules.items():
         for row in _flatten_items(module_key, "", payload):
             blob = row["search_blob"]
-            score = 0
+            score = 0.0
             if module_key in MODE_TO_MODULES.get(mode, set()):
-                score += 3
+                score += 3.0
             for term in topic_terms:
                 if term and term in blob:
-                    score += 2
+                    score += 1.7
             if any(term in blob for term in RISK_TERMS):
-                score += 1
+                score += 0.8
             if "trigger" in blob or "threshold" in blob or "rule" in blob or "heuristic" in blob:
-                score += 1
+                score += 0.5
             if score > 0:
                 scored.append((score, row))
     scored.sort(key=lambda item: item[0], reverse=True)
 
-    selected: list[dict[str, str]] = []
+    selected: list[IntelligenceEvidence] = []
     seen: set[tuple[str, str, str]] = set()
     for score, row in scored:
-        key = (row["module"], row["path"], row["text"])
+        key = (row["module"], row["section"], row["rule_id"])
         if key in seen:
             continue
         seen.add(key)
-        selected.append({"module": row["module"], "path": row["path"], "value": row["text"], "score": str(score)})
+        selected.append(
+            IntelligenceEvidence(
+                source_module=row["module"],
+                section=row["section"],
+                rule_id=row["rule_id"],
+                value=row["text"],
+                relevance=round(score, 3),
+                citation=row["citation"],
+            )
+        )
         if len(selected) >= limit:
             break
     return selected
@@ -279,7 +349,7 @@ def build_doobie_context(data: dict[str, Any] | None, mode: str, question: str |
         "extraction_summary": extraction_summary,
         "relevant_rules": _collect_relevant_rules(safe_mode, modules),
         "risk_flags": risk_flags,
-        "selected_intelligence": _rank_intelligence(safe_mode, modules, question=question, data=data),
+        "selected_intelligence": [e.to_dict() for e in _rank_intelligence(safe_mode, modules, question=question, data=data)],
         "state_overlay": _build_state_overlay(state, modules),
         "intel_modules": modules,
     }

@@ -101,6 +101,8 @@ class DoobieCopilot:
         recommendations: list[str],
         confidence: str,
         sources: list[str],
+        question: str,
+        evidence: list[dict[str, Any]] | None = None,
         risk_flags: list[str] | None = None,
         inefficiencies: list[str] | None = None,
         analysis: CannabisOutput | None = None,
@@ -114,8 +116,21 @@ class DoobieCopilot:
             inefficiencies=inefficiencies or [],
             confidence=confidence,
             sources=sources,
+            question=question,
+            evidence=evidence or [],
         )
         return CopilotResponse(**structured.to_dict(), analysis=analysis)
+
+    @staticmethod
+    def _knowledge_citations(matches: list[dict] | None, limit: int = 3) -> list[str]:
+        refs: list[str] = []
+        for match in matches or []:
+            citation = str(match.get("citation") or "").strip()
+            if citation and citation not in refs:
+                refs.append(citation)
+            if len(refs) >= limit:
+                break
+        return refs
 
     def _extract_inefficiencies(self, mode: str, data: dict[str, Any], insights: dict[str, Any] | None = None) -> list[str]:
         inefficiencies: list[str] = []
@@ -248,7 +263,9 @@ class DoobieCopilot:
             explanation_context=explanation,
             recommendations=self._recommendations_for(safe_persona),
             confidence=confidence,
-            sources=grounded.get("sources", []),
+            sources=grounded.get("sources", []) + self._knowledge_citations(knowledge),
+            question=question,
+            evidence=context.get("selected_intelligence", []),
             risk_flags=risks,
             inefficiencies=inefficiencies,
         )
@@ -307,7 +324,9 @@ class DoobieCopilot:
             explanation_context=explanation,
             recommendations=self._recommendations_for(safe_persona),
             confidence=confidence,
-            sources=grounded.get("sources", []),
+            sources=grounded.get("sources", []) + self._knowledge_citations(outputs.get("knowledge_matches", [])),
+            question=question,
+            evidence=context.get("selected_intelligence", []),
             risk_flags=risks,
             inefficiencies=inefficiencies,
         )
@@ -363,6 +382,8 @@ class DoobieCopilot:
             recommendations=recommendations,
             confidence=confidence,
             sources=grounded.get("sources", []),
+            question=question,
+            evidence=context.get("selected_intelligence", []),
             risk_flags=risks,
             inefficiencies=inefficiencies,
         )
@@ -408,6 +429,8 @@ class DoobieCopilot:
             recommendations=analysis.recommendations,
             confidence=confidence,
             sources=sources,
+            question="inventory risk promotions compliance assortment pricing days on hand",
+            evidence=context.get("selected_intelligence", []),
             risk_flags=risks,
             inefficiencies=inefficiencies,
             analysis=analysis,
