@@ -109,7 +109,16 @@ _ENTRIES: tuple[DepartmentKnowledgeEntry, ...] = (
 
 def get_department_knowledge(department: str) -> list[dict]:
     dept = (department or "").strip().lower()
-    return [asdict(entry) for entry in _ENTRIES if entry.department == dept]
+    matches: list[dict] = []
+    for idx, entry in enumerate(_ENTRIES):
+        if entry.department != dept:
+            continue
+        record = asdict(entry)
+        stable_id = f"{entry.department}.{entry.topic.replace(' ', '_')}.{idx}"
+        record["entry_id"] = stable_id
+        record["citation"] = f"[department_knowledge:{stable_id}]"
+        matches.append(record)
+    return matches
 
 
 def search_department_knowledge(department: str, question: str, limit: int = 5) -> list[dict]:
@@ -136,5 +145,6 @@ def render_department_knowledge_summary(matches: list[dict]) -> str:
         return "No built-in department knowledge matches available."
     lines = ["Built-in learned knowledge (curated, conservative):"]
     for entry in matches[:5]:
-        lines.append(f"- {entry['title']}: {entry['summary']} Guidance: {entry['guidance']} ({entry['source_type']}, {entry['trust_level']}).")
+        citation = f" {entry.get('citation')}" if entry.get("citation") else ""
+        lines.append(f"- {entry['title']}: {entry['summary']} Guidance: {entry['guidance']} ({entry['source_type']}, {entry['trust_level']}).{citation}")
     return "\n".join(lines)
