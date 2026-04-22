@@ -65,6 +65,7 @@ class KeyStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = Lock()
         self._backend = "postgres" if is_postgres_url(self.database_url) else "sqlite"
+        self._legacy_migration: dict[str, int | bool] = {"attempted": False, "imported": 0, "skipped": 0}
         self._init_db()
         self._migrate_legacy_sqlite_if_needed()
 
@@ -109,6 +110,7 @@ class KeyStore:
     def _migrate_legacy_sqlite_if_needed(self) -> None:
         if self._backend != "postgres" or not self.path.exists():
             return
+        self._legacy_migration["attempted"] = True
         try:
             with self._sqlite_connect() as legacy:
                 rows = [dict(row) for row in legacy.execute("SELECT * FROM key_records").fetchall()]
@@ -143,10 +145,31 @@ class KeyStore:
                                 row.get("expires_at"),
                             ),
                         )
+                        if cur.rowcount > 0:
+                            self._legacy_migration["imported"] = int(self._legacy_migration["imported"]) + 1
+                        else:
+                            self._legacy_migration["skipped"] = int(self._legacy_migration["skipped"]) + 1
 
     def diagnostic(self) -> dict[str, str]:
         if self._backend == "postgres":
-            return {"backend": "postgres", "database_url": "configured"}
+            assert self.database_url is not None
+            reachable = "false"
+            try:
+                with postgres_connection(self.database_url) as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT 1")
+                        cur.fetchone()
+                reachable = "true"
+            except Exception:
+                reachable = "false"
+            return {
+                "backend": "postgres",
+                "database_url": "configured",
+                "postgres_reachable": reachable,
+                "legacy_migration_attempted": str(bool(self._legacy_migration["attempted"])).lower(),
+                "legacy_migration_imported": str(self._legacy_migration["imported"]),
+                "legacy_migration_skipped": str(self._legacy_migration["skipped"]),
+            }
         return {"backend": "local_sqlite", "path": str(self.path)}
 
     def generate_api_key(self) -> str:
@@ -368,6 +391,16 @@ class KeyStore:
                             (status, status, record_id),
                         )
                         changed = cur.rowcount > 0
+                if changed:
+                    append_audit_event(
+                        self.database_url,
+                        event_type="api_key_status_changed",
+                        actor_type="admin_user",
+                        actor_identifier=None,
+                        target_type="api_key",
+                        target_id=record_id,
+                        event_data={"status": status},
+                    )
                 return changed
             with self._sqlite_connect() as conn:
                 if status == "revoked":
@@ -401,7 +434,18 @@ class KeyStore:
                 with postgres_connection(self.database_url) as conn:
                     with conn.cursor() as cur:
                         cur.execute(f"UPDATE api_keys SET {', '.join(updates)} WHERE id=%s::uuid", tuple(params))
-                        return cur.rowcount > 0
+                        changed = cur.rowcount > 0
+                if changed:
+                    append_audit_event(
+                        self.database_url,
+                        event_type="api_key_metadata_updated",
+                        actor_type="admin_user",
+                        actor_identifier=None,
+                        target_type="api_key",
+                        target_id=record_id,
+                        event_data={"updated_fields": [field.split("=")[0] for field in updates]},
+                    )
+                return changed
 
             updates: list[str] = []
             params: list[Any] = []

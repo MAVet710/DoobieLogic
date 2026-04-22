@@ -39,7 +39,9 @@ class LicenseStore:
         self.sqlite_path = self.path.with_suffix(".db")
         self._lock = Lock()
         self._backend = "postgres" if is_postgres_url(self.database_url) else "sqlite"
+        self._legacy_migration: dict[str, int | bool] = {"attempted": False, "imported_customers": 0, "imported_licenses": 0, "skipped_licenses": 0}
         self._init_db()
+        self._migrate_legacy_sqlite_if_needed()
         self._migrate_legacy_json_if_needed()
 
     def _sqlite_connect(self) -> sqlite3.Connection:
@@ -128,6 +130,7 @@ class LicenseStore:
                             (row["company_name"], row.get("contact_name"), row.get("contact_email"), row.get("notes"), "active"),
                         )
                         customer_map[row["customer_id"]] = str(cur.fetchone()[0])
+                        self._legacy_migration["imported_customers"] = int(self._legacy_migration["imported_customers"]) + 1
 
                     for row in licenses:
                         raw_key = str(row.get("license_key") or "").strip()
@@ -151,10 +154,99 @@ class LicenseStore:
                                 row.get("revoked_reason"),
                             ),
                         )
+                        if cur.rowcount > 0:
+                            self._legacy_migration["imported_licenses"] = int(self._legacy_migration["imported_licenses"]) + 1
+                        else:
+                            self._legacy_migration["skipped_licenses"] = int(self._legacy_migration["skipped_licenses"]) + 1
+
+    def _migrate_legacy_sqlite_if_needed(self) -> None:
+        if self._backend != "postgres" or not self.sqlite_path.exists():
+            return
+        self._legacy_migration["attempted"] = True
+        try:
+            with self._sqlite_connect() as legacy:
+                customer_rows = [dict(row) for row in legacy.execute("SELECT * FROM customers").fetchall()]
+                license_rows = [dict(row) for row in legacy.execute("SELECT * FROM licenses").fetchall()]
+        except Exception:
+            return
+
+        if not customer_rows and not license_rows:
+            return
+
+        assert self.database_url is not None
+        with self._lock:
+            with postgres_connection(self.database_url) as conn:
+                with conn.cursor() as cur:
+                    customer_map: dict[str, str] = {}
+                    for row in customer_rows:
+                        cur.execute(
+                            """
+                            INSERT INTO customers(company_name, contact_name, contact_email, notes, status)
+                            VALUES (%s, %s, %s, %s, %s)
+                            RETURNING id
+                            """,
+                            (
+                                row.get("company_name"),
+                                row.get("contact_name"),
+                                row.get("contact_email"),
+                                row.get("notes"),
+                                row.get("status") or "active",
+                            ),
+                        )
+                        customer_map[str(row.get("customer_id"))] = str(cur.fetchone()[0])
+                        self._legacy_migration["imported_customers"] = int(self._legacy_migration["imported_customers"]) + 1
+
+                    for row in license_rows:
+                        raw_key = str(row.get("license_key") or "").strip()
+                        mapped_customer_id = customer_map.get(str(row.get("customer_id")))
+                        if not raw_key or not mapped_customer_id:
+                            self._legacy_migration["skipped_licenses"] = int(self._legacy_migration["skipped_licenses"]) + 1
+                            continue
+                        cur.execute(
+                            """
+                            INSERT INTO licenses(customer_id, license_key_hash, license_key_preview, license_key_prefix, plan_code, status, issued_at, expires_at, revoked_at, notes)
+                            VALUES (%s::uuid, %s, %s, %s, %s, %s, %s::timestamptz, %s::timestamptz, %s::timestamptz, %s)
+                            ON CONFLICT (license_key_hash) DO NOTHING
+                            """,
+                            (
+                                mapped_customer_id,
+                                hash_secret(raw_key),
+                                key_preview(raw_key),
+                                LICENSE_PREFIX,
+                                row.get("plan_type") or "trial",
+                                row.get("status") or "active",
+                                row.get("issued_at") or utcnow_iso(),
+                                row.get("expires_at"),
+                                utcnow_iso() if (row.get("status") or "").lower() == "revoked" else None,
+                                row.get("revoked_reason"),
+                            ),
+                        )
+                        if cur.rowcount > 0:
+                            self._legacy_migration["imported_licenses"] = int(self._legacy_migration["imported_licenses"]) + 1
+                        else:
+                            self._legacy_migration["skipped_licenses"] = int(self._legacy_migration["skipped_licenses"]) + 1
 
     def diagnostic(self) -> dict[str, str]:
         if self._backend == "postgres":
-            return {"backend": "postgres", "database_url": "configured"}
+            assert self.database_url is not None
+            reachable = "false"
+            try:
+                with postgres_connection(self.database_url) as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT 1")
+                        cur.fetchone()
+                reachable = "true"
+            except Exception:
+                reachable = "false"
+            return {
+                "backend": "postgres",
+                "database_url": "configured",
+                "postgres_reachable": reachable,
+                "legacy_migration_attempted": str(bool(self._legacy_migration["attempted"])).lower(),
+                "legacy_migration_imported_customers": str(self._legacy_migration["imported_customers"]),
+                "legacy_migration_imported_licenses": str(self._legacy_migration["imported_licenses"]),
+                "legacy_migration_skipped_licenses": str(self._legacy_migration["skipped_licenses"]),
+            }
         return {"backend": "local_sqlite", "path": str(self.sqlite_path)}
 
     def list_customers(self) -> list[Customer]:
@@ -317,7 +409,7 @@ class LicenseStore:
                     row = cur.fetchone()
             if not row:
                 return None
-            include_raw = safe_key if key_hash == hash_secret(safe_key) else None
+            include_raw = safe_key if safe_key.startswith(f"{LICENSE_PREFIX}-") else None
             return self._license_from_pg_row(row, include_raw_key=include_raw)
 
         with self._sqlite_connect() as conn:
@@ -477,6 +569,15 @@ class LicenseStore:
                             return {"valid": False, "reason": "disabled"}
                         if expires_at and expires_at <= datetime.now(timezone.utc):
                             cur.execute("UPDATE licenses SET status='expired' WHERE id=%s::uuid", (str(row[0]),))
+                            append_audit_event(
+                                self.database_url,
+                                event_type="license_expired",
+                                actor_type="system",
+                                actor_identifier=None,
+                                target_type="license",
+                                target_id=str(row[0]),
+                                event_data={"reason": "expires_at_reached"},
+                            )
                             return {"valid": False, "reason": "expired"}
                         if status == "expired":
                             return {"valid": False, "reason": "expired"}
