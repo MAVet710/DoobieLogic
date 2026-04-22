@@ -1,10 +1,10 @@
 # Postgres persistence (cloud mode)
 
-DoobieLogic now uses a shared Postgres schema as the source of truth for long-lived records when `DATABASE_URL` (or `DOOBIE_DATABASE_URL`) is configured.
+DoobieLogic now uses a shared Postgres schema as the source of truth for long-lived records when a Postgres URL is configured.
 
 ## Required env vars
 
-- `DATABASE_URL` (or `DOOBIE_DATABASE_URL`): Postgres connection URL.
+- Postgres URL (first non-empty wins): `DOOBIE_DATABASE_URL`, then `DATABASE_URL`, then `POSTGRES_URL`.
 - `DOOBIE_BACKEND_MODE`: `auto`, `local`, or `remote_api`.
 - `DOOBIE_ADMIN_API_BASE_URL` + `ADMIN_API_KEY` for split Streamlit/FastAPI deployments.
 
@@ -28,6 +28,10 @@ Schema initialization is automatic on startup of `LicenseStore`/`KeyStore` with 
 
 ## Legacy compatibility
 
-- Local SQLite/JSON persistence remains available for local fallback mode.
-- Existing `license_store.json` and `key_store.db` records are imported into Postgres the first time Postgres-backed startup occurs on an empty schema.
+- Local SQLite/JSON persistence remains available only for local fallback mode.
+- Existing legacy records are imported into Postgres at startup when Postgres mode is active:
+  - `license_store.json`
+  - `license_store.db` (derived from legacy JSON path)
+  - `key_store.db`
 - Legacy files are not deleted.
+- Health/diagnostic routes expose active backend and Postgres reachability so operators can confirm cloud mode is actually active.

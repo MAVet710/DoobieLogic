@@ -94,7 +94,16 @@ class AdminGateway:
             "key_store": self.config.key_store_path,
             "license_store_backend": self.license_store.diagnostic().get("backend") if self.license_store else "unknown",
             "key_store_backend": self.key_store.diagnostic().get("backend") if self.key_store else "unknown",
-            "source_of_truth": "postgres" if self.config.database_url else "legacy_local_store",
+            "source_of_truth": (
+                "postgres_shared"
+                if (
+                    self.license_store
+                    and self.key_store
+                    and self.license_store.diagnostic().get("backend") == "postgres"
+                    and self.key_store.diagnostic().get("backend") == "postgres"
+                )
+                else "legacy_local_store"
+            ),
         }
 
     def test_connectivity(self) -> dict[str, Any]:
