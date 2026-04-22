@@ -167,7 +167,7 @@ def test_admin_api_key_management_routes(monkeypatch, tmp_path):
     )
     assert created.status_code == 200
     payload = created.json()
-    assert payload["raw_key"].startswith("DLB-API-")
+    assert payload["raw_key"].startswith("DLB-SVC-")
 
     listed = client.get("/api/v1/admin/api-keys", headers=headers)
     assert listed.status_code == 200
@@ -246,7 +246,7 @@ def test_bootstrap_key_can_manage_additional_admin_and_service_keys(monkeypatch,
     )
     assert create_service.status_code == 200
     service_key = create_service.json()["raw_key"]
-    assert service_key.startswith("DLB-API-")
+    assert service_key.startswith("DLB-SVC-")
 
     validate_service = client.post("/api/v1/keys/validate", json={"api_key": service_key})
     assert validate_service.status_code == 200

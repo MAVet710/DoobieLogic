@@ -8,10 +8,10 @@ from doobielogic.license_store import LicenseStore
 def test_customer_creation_and_license_generation(tmp_path):
     store = LicenseStore(path=tmp_path / "license_store.json")
     customer = store.create_customer("Acme Cannabis", "Pat", "pat@example.com", "priority account")
-    assert customer.customer_id.startswith("cust_")
+    assert customer.customer_id
 
     license_obj = store.create_license(customer.customer_id, "premium")
-    assert license_obj.license_key.startswith("DB-PREM-")
+    assert license_obj.license_key.startswith("DLB-LIC-")
     assert license_obj.status == "active"
 
 

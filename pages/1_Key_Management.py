@@ -508,10 +508,17 @@ with tab_manage:
             )
 
             if licenses:
-                selected_license = st.selectbox("Select license", options=[lic.license_key for lic in licenses])
+                license_options = {
+                    f"{lic.license_key} · {customers_by_id.get(lic.customer_id).company_name if customers_by_id.get(lic.customer_id) else 'Unknown'}": (
+                        lic.id or lic.license_key
+                    )
+                    for lic in licenses
+                }
+                selected_label = st.selectbox("Select license", options=list(license_options.keys()))
+                selected_license = license_options[selected_label]
                 col1, col2 = st.columns(2)
                 with col1:
-                    if st.button("Revoke license", key=f"revoke_license_{selected_license}"):
+                    if st.button("Revoke license", key=f"revoke_license_{selected_label}"):
                         try:
                             gateway.revoke_license(selected_license, reason="revoked from key management")
                             st.success("License revoked.")
@@ -519,7 +526,7 @@ with tab_manage:
                         except (ValueError, AdminGatewayError) as exc:
                             _render_admin_error("Revoke license failed", exc)
                 with col2:
-                    if st.button("Reset license", key=f"reset_license_{selected_license}"):
+                    if st.button("Reset license", key=f"reset_license_{selected_label}"):
                         try:
                             reset_result = gateway.reset_license(selected_license, reason="reset from key management")
                             st.session_state["latest_license_key"] = {
