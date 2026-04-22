@@ -242,6 +242,8 @@ def _support_response(resp, mode: str) -> dict[str, Any]:
 @app.get("/health")
 def health() -> dict[str, str]:
     diagnostics = CONFIG.diagnostics()
+    license_diag = LICENSE_STORE.diagnostic()
+    key_diag = KEY_STORE.diagnostic()
     return {
         "status": "ok",
         "service": "DoobieLogic API v4",
@@ -251,6 +253,10 @@ def health() -> dict[str, str]:
         "preferred_backend_mode": str(diagnostics["preferred_backend_mode"]),
         "license_store": str(diagnostics["license_store_path"]),
         "key_store": str(diagnostics["key_store_path"]),
+        "license_store_backend": str(license_diag.get("backend")),
+        "key_store_backend": str(key_diag.get("backend")),
+        "postgres_configured": "true" if bool(diagnostics["database_url_configured"]) else "false",
+        "postgres_reachable": "true" if (license_diag.get("backend") == "postgres" and key_diag.get("backend") == "postgres") else "false",
         "warnings": ",".join(diagnostics["warnings"]) if diagnostics["warnings"] else "",
     }
 
