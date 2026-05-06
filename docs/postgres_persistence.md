@@ -43,8 +43,6 @@ Use persistent Postgres-backed storage in production.
 
 Required:
 - `DATABASE_URL` (or `DOOBIE_DATABASE_URL` / `POSTGRES_URL`) pointing to your managed Postgres instance.
-- For your current Render database, set:
-  - `DATABASE_URL=postgresql://doobie_db_user:abW4x1fwiyQSdWxxNvoBtyGMuyoSEy0S@dpg-d7ki5tqqqhas73blgv20-a.oregon-postgres.render.com/doobie_db`
 - `DOOBIE_BACKEND_MODE=postgres` (alias of remote mode for production clarity).
 - `ADMIN_API_KEY` (or complete the bootstrap admin key flow after deploy).
 

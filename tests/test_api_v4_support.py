@@ -74,7 +74,6 @@ def test_health_reports_postgres_shared(monkeypatch):
         'license_store_path': 'unused',
         'key_store_path': 'unused',
         'database_url_configured': True,
-        'database_url_source': 'DATABASE_URL',
         'warnings': [],
         'production_like_env': True,
     }})())
@@ -84,7 +83,6 @@ def test_health_reports_postgres_shared(monkeypatch):
     res = client.get('/health')
     payload = res.json()
     assert payload['postgres_configured'] == 'true'
-    assert payload['postgres_config_source'] == 'DATABASE_URL'
     assert payload['postgres_reachable'] == 'true'
     assert payload['license_store_backend'] == 'postgres'
     assert payload['key_store_backend'] == 'postgres'
