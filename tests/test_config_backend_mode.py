@@ -54,3 +54,10 @@ def test_strict_mode_rejects_admin_key_without_remote_url():
         assert "Strict config error" in str(exc)
     else:
         raise AssertionError("Expected strict config to fail when ADMIN_API_KEY is set without remote url")
+
+
+def test_database_url_source_prefers_database_url():
+    config = load_doobie_config(env={"DATABASE_URL": "postgresql://example"})
+    diagnostics = config.diagnostics()
+    assert diagnostics["database_url_configured"] is True
+    assert diagnostics["database_url_source"] == "DATABASE_URL"
