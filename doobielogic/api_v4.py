@@ -266,7 +266,7 @@ def health() -> dict[str, str]:
         "license_store_backend": str(license_diag.get("backend")),
         "key_store_backend": str(key_diag.get("backend")),
         "postgres_configured": "true" if bool(diagnostics["database_url_configured"]) else "false",
-        "postgres_config_source": str(diagnostics.get("database_url_source") or ""),
+        "database_url_source": str(diagnostics.get("database_url_source") or ""),
         "postgres_reachable": "true" if postgres_reachable else "false",
         "source_of_truth": source_of_truth,
         "warnings": ",".join(dict.fromkeys(warnings)) if warnings else "",
@@ -390,6 +390,29 @@ def admin_validate_license(req: LicenseValidateReq, authorization: str | None = 
     return result
 
 
+@app.get("/api/v1/admin/diagnostics/storage")
+def admin_storage_diagnostics(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin_auth(authorization)
+    key_diag = KEY_STORE.diagnostic()
+    license_diag = LICENSE_STORE.diagnostic()
+    source_of_truth = "postgres_shared" if (license_diag.get("backend") == "postgres" and key_diag.get("backend") == "postgres") else "local_legacy"
+
+    service_keys = KEY_STORE.load_key_records(key_type="api", key_role=KEY_ROLE_SERVICE)
+    admin_keys = KEY_STORE.load_key_records(key_type="api", key_role=KEY_ROLE_ADMIN)
+    licenses = LICENSE_STORE.list_licenses()
+
+    active_service_key_count = sum(1 for row in service_keys if bool(row.get("is_active", True)) and not bool(row.get("is_revoked", False)))
+    active_admin_key_count = sum(1 for row in admin_keys if bool(row.get("is_active", True)) and not bool(row.get("is_revoked", False)))
+    active_license_count = sum(1 for lic in licenses if str(getattr(lic, "status", "")).lower() == "active")
+
+    return {
+        "key_store_backend": str(key_diag.get("backend")),
+        "license_store_backend": str(license_diag.get("backend")),
+        "source_of_truth": source_of_truth,
+        "active_service_key_count": active_service_key_count,
+        "active_admin_key_count": active_admin_key_count,
+        "active_license_count": active_license_count,
+    }
 
 
 @app.get("/api/v1/admin/bootstrap/status")

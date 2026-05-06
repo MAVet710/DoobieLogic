@@ -11,6 +11,7 @@ DOOBIE_CONFIG_KEYS: tuple[str, ...] = (
     "DOOBIE_ADMIN_API_BASE_URL",
     "DOOBIE_ADMIN_API_TIMEOUT",
     "DOOBIE_BACKEND_MODE",
+    "BACKEND_MODE",
     "DOOBIE_STRICT_CONFIG",
     "DOOBIE_API_KEY",
     "ADMIN_API_KEY",
@@ -49,7 +50,7 @@ def _resolve_backend_mode(preferred_mode: str, base_url: str) -> tuple[str, str]
     if normalized_mode == "local":
         return "local", "explicit"
     raise ValueError(
-        f"Unsupported DOOBIE_BACKEND_MODE: {preferred_mode!r}. "
+        f"Unsupported DOOBIE_BACKEND_MODE/BACKEND_MODE: {preferred_mode!r}. "
         "Use one of: auto, local, remote_api, remote, postgres."
     )
 
@@ -109,6 +110,7 @@ class DoobieConfig:
     backend_mode_value: str
     backend_mode_source: str
     preferred_backend_mode: str
+    preferred_backend_mode_env: str
     strict_config: bool
     production_like_env: bool
 
@@ -139,6 +141,7 @@ class DoobieConfig:
             "backend_mode": self.backend_mode,
             "backend_mode_source": self.backend_mode_source,
             "preferred_backend_mode": self.preferred_backend_mode,
+            "preferred_backend_mode_env": getattr(self, "preferred_backend_mode_env", "DOOBIE_BACKEND_MODE"),
             "admin_api_base_url": self.admin_api_base_url or None,
             "admin_api_timeout_seconds": self.admin_api_timeout,
             "license_store_path": self.license_store_path,
@@ -160,7 +163,9 @@ def load_doobie_config(env: Mapping[str, str] | None = None) -> DoobieConfig:
         timeout_value = float(timeout_raw)
     except ValueError:
         timeout_value = 12.0
-    preferred_mode = (source.get("DOOBIE_BACKEND_MODE") or "auto").strip().lower()
+    preferred_mode_raw = (source.get("DOOBIE_BACKEND_MODE") or source.get("BACKEND_MODE") or "auto").strip().lower()
+    preferred_mode = preferred_mode_raw
+    preferred_mode_env = "DOOBIE_BACKEND_MODE" if (source.get("DOOBIE_BACKEND_MODE") or "").strip() else ("BACKEND_MODE" if (source.get("BACKEND_MODE") or "").strip() else "auto")
     strict_config = _parse_bool(source.get("DOOBIE_STRICT_CONFIG"))
     production_like_env = _is_production_like_env(source)
     resolved_mode, mode_source = _resolve_backend_mode(preferred_mode, base_url)
@@ -194,6 +199,15 @@ def load_doobie_config(env: Mapping[str, str] | None = None) -> DoobieConfig:
     elif (source.get("POSTGRES_URL") or "").strip():
         database_url_source = "POSTGRES_URL"
 
+    if production_like_env and not database_url:
+        import logging
+
+        logging.getLogger(__name__).warning("Production-like environment detected without DOOBIE_DATABASE_URL/DATABASE_URL/POSTGRES_URL; key and license storage may be deployment-local.")
+        if strict_config:
+            raise ValueError(
+                "Strict config error: production-like environment requires DOOBIE_DATABASE_URL (or DATABASE_URL/POSTGRES_URL fallback) for persistent key/license storage."
+            )
+
     return DoobieConfig(
         database_url=database_url,
         database_url_source=database_url_source,
@@ -207,6 +221,7 @@ def load_doobie_config(env: Mapping[str, str] | None = None) -> DoobieConfig:
         backend_mode_value=resolved_mode,
         backend_mode_source=mode_source,
         preferred_backend_mode=preferred_mode or "auto",
+        preferred_backend_mode_env=preferred_mode_env,
         strict_config=strict_config,
         production_like_env=production_like_env,
     )
