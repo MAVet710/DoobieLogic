@@ -61,3 +61,33 @@ def test_database_url_source_prefers_database_url():
     diagnostics = config.diagnostics()
     assert diagnostics["database_url_configured"] is True
     assert diagnostics["database_url_source"] == "DATABASE_URL"
+
+
+def test_database_url_source_prefers_doobie_database_url_over_database_url():
+    config = load_doobie_config(env={"DOOBIE_DATABASE_URL": "postgresql://doobie", "DATABASE_URL": "postgresql://fallback"})
+    diagnostics = config.diagnostics()
+    assert diagnostics["database_url_source"] == "DOOBIE_DATABASE_URL"
+    assert config.database_url == "postgresql://doobie"
+
+
+def test_database_url_source_accepts_postgres_url_fallback():
+    config = load_doobie_config(env={"POSTGRES_URL": "postgresql://pg"})
+    diagnostics = config.diagnostics()
+    assert diagnostics["database_url_source"] == "POSTGRES_URL"
+    assert config.database_url == "postgresql://pg"
+
+
+def test_backend_mode_legacy_alias_supported():
+    config = load_doobie_config(env={"BACKEND_MODE": "local"})
+    diagnostics = config.diagnostics()
+    assert config.backend_mode == "local"
+    assert diagnostics["preferred_backend_mode_env"] == "BACKEND_MODE"
+
+
+def test_strict_mode_fails_in_production_like_env_without_database_url():
+    try:
+        load_doobie_config(env={"DOOBIE_STRICT_CONFIG": "true", "DOOBIE_ENV": "production", "DOOBIE_ADMIN_API_BASE_URL": "https://admin.example.com"})
+    except ValueError as exc:
+        assert "DOOBIE_DATABASE_URL" in str(exc)
+    else:
+        raise AssertionError("Expected strict config to fail without database URL in production-like env")

@@ -68,6 +68,25 @@ Keys are generated server-side only, with random segments and plan prefix:
 - `POST /api/v1/admin/api-keys/update`
 - `POST /api/v1/admin/api-keys/status`
 - `POST /api/v1/admin/api-keys/revoke`
+- `GET /api/v1/admin/diagnostics/storage` (admin-safe backend/count diagnostics; no raw keys)
+
+
+### Key types for Buyer Dashboard integration
+
+1. **Service API Key**
+   - Generated from Doobie admin API key management endpoints.
+   - Used by Buyer Dashboard for service-to-service auth in either `Authorization: Bearer <service-key>` or `x-api-key: <service-key>`.
+   - Must include `buyer_dashboard` scope for Buyer Dashboard support and license validation routes.
+
+2. **License Key**
+   - Generated per customer/license plan.
+   - Used for customer entitlement checks.
+   - Sent in the payload to `POST /api/v1/license/validate`.
+   - Not used as the Authorization bearer token.
+
+3. **Admin API Key**
+   - Used only for Doobie admin endpoints (customer/license/key management and diagnostics).
+   - Should never be embedded in user-facing Buyer Dashboard configuration.
 
 ## Auth
 

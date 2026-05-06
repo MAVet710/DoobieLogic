@@ -105,3 +105,46 @@ def test_health_warns_when_local_mode_active(monkeypatch):
 
     res = client.get('/health')
     assert 'Keys and licenses are deployment-local and may not survive redeploys.' in res.json()['warnings']
+
+
+def test_health_reports_database_url_source(monkeypatch):
+    monkeypatch.setattr('doobielogic.api_v4.CONFIG', type('Cfg', (), {'diagnostics': lambda self: {
+        'backend_mode': 'local',
+        'backend_mode_source': 'explicit',
+        'preferred_backend_mode': 'local',
+        'license_store_path': 'data/license_store.json',
+        'key_store_path': 'data/key_store.db',
+        'database_url_configured': True,
+        'database_url_source': 'DOOBIE_DATABASE_URL',
+        'warnings': [],
+        'production_like_env': False,
+    }})())
+    monkeypatch.setattr('doobielogic.api_v4.LICENSE_STORE', type('Lic', (), {'diagnostic': lambda self: {'backend': 'postgres', 'postgres_reachable': 'true'}})())
+    monkeypatch.setattr('doobielogic.api_v4.KEY_STORE', type('Keys', (), {'diagnostic': lambda self: {'backend': 'postgres', 'postgres_reachable': 'true'}})())
+
+    res = client.get('/health')
+    assert res.status_code == 200
+    assert res.json()['database_url_source'] == 'DOOBIE_DATABASE_URL'
+
+
+def test_admin_storage_diagnostics_counts_and_backends(monkeypatch):
+    monkeypatch.setattr('doobielogic.api_v4.ADMIN_API_KEY', 'admin-secret')
+    monkeypatch.setattr('doobielogic.api_v4.KEY_STORE', type('Keys', (), {
+        'diagnostic': lambda self: {'backend': 'postgres'},
+        'validate_admin_key': lambda self, token: {'valid': token == 'admin-secret'},
+        'load_key_records': lambda self, key_type=None, key_role=None, search=None: (
+            [{'is_active': True, 'is_revoked': False}, {'is_active': False, 'is_revoked': False}] if key_role == 'service' else [{'is_active': True, 'is_revoked': False}]
+        ),
+    })())
+    monkeypatch.setattr('doobielogic.api_v4.LICENSE_STORE', type('Lic', (), {
+        'diagnostic': lambda self: {'backend': 'postgres'},
+        'list_licenses': lambda self: [type('L', (), {'status': 'active'})(), type('L', (), {'status': 'revoked'})()],
+    })())
+
+    res = client.get('/api/v1/admin/diagnostics/storage', headers={'Authorization': 'Bearer admin-secret'})
+    payload = res.json()
+    assert res.status_code == 200
+    assert payload['source_of_truth'] == 'postgres_shared'
+    assert payload['active_service_key_count'] == 1
+    assert payload['active_admin_key_count'] == 1
+    assert payload['active_license_count'] == 1
