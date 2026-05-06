@@ -64,3 +64,44 @@ def test_support_endpoint_accepts_authorization_bearer_with_generated_key(monkey
         json={"question": "help", "data": {"days_on_hand": 10}},
     )
     assert res.status_code == 200
+
+
+def test_health_reports_postgres_shared(monkeypatch):
+    monkeypatch.setattr('doobielogic.api_v4.CONFIG', type('Cfg', (), {'diagnostics': lambda self: {
+        'backend_mode': 'remote_api',
+        'backend_mode_source': 'explicit',
+        'preferred_backend_mode': 'postgres',
+        'license_store_path': 'unused',
+        'key_store_path': 'unused',
+        'database_url_configured': True,
+        'warnings': [],
+        'production_like_env': True,
+    }})())
+    monkeypatch.setattr('doobielogic.api_v4.LICENSE_STORE', type('Lic', (), {'diagnostic': lambda self: {'backend': 'postgres', 'postgres_reachable': 'true'}})())
+    monkeypatch.setattr('doobielogic.api_v4.KEY_STORE', type('Keys', (), {'diagnostic': lambda self: {'backend': 'postgres', 'postgres_reachable': 'true'}})())
+
+    res = client.get('/health')
+    payload = res.json()
+    assert payload['postgres_configured'] == 'true'
+    assert payload['postgres_reachable'] == 'true'
+    assert payload['license_store_backend'] == 'postgres'
+    assert payload['key_store_backend'] == 'postgres'
+    assert payload['source_of_truth'] == 'postgres_shared'
+
+
+def test_health_warns_when_local_mode_active(monkeypatch):
+    monkeypatch.setattr('doobielogic.api_v4.CONFIG', type('Cfg', (), {'diagnostics': lambda self: {
+        'backend_mode': 'local',
+        'backend_mode_source': 'explicit',
+        'preferred_backend_mode': 'local',
+        'license_store_path': 'data/license_store.json',
+        'key_store_path': 'data/key_store.db',
+        'database_url_configured': False,
+        'warnings': ['PRODUCTION_CONFIG_DRIFT_RISK_LOCAL_MODE_ACTIVE'],
+        'production_like_env': True,
+    }})())
+    monkeypatch.setattr('doobielogic.api_v4.LICENSE_STORE', type('Lic', (), {'diagnostic': lambda self: {'backend': 'local_sqlite'}})())
+    monkeypatch.setattr('doobielogic.api_v4.KEY_STORE', type('Keys', (), {'diagnostic': lambda self: {'backend': 'local_sqlite'}})())
+
+    res = client.get('/health')
+    assert 'Keys and licenses are deployment-local and may not survive redeploys.' in res.json()['warnings']

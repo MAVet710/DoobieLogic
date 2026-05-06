@@ -35,3 +35,21 @@ Schema initialization is automatic on startup of `LicenseStore`/`KeyStore` with 
   - `key_store.db`
 - Legacy files are not deleted.
 - Health/diagnostic routes expose active backend and Postgres reachability so operators can confirm cloud mode is actually active.
+
+
+## Render production setup
+
+Use persistent Postgres-backed storage in production.
+
+Required:
+- `DATABASE_URL` (or `DOOBIE_DATABASE_URL` / `POSTGRES_URL`) pointing to your managed Postgres instance.
+- `DOOBIE_BACKEND_MODE=postgres` (alias of remote mode for production clarity).
+- `ADMIN_API_KEY` (or complete the bootstrap admin key flow after deploy).
+
+Behavior:
+- When a Postgres URL is present, `LicenseStore` and `KeyStore` initialize shared Postgres schema and use Postgres as source of truth.
+- `/health` reports `postgres_configured`, `postgres_reachable`, `license_store_backend`, `key_store_backend`, and `source_of_truth`.
+- If production-like env is detected while local mode is active, health warns: `Keys and licenses are deployment-local and may not survive redeploys.`
+
+Important migration note:
+- Local-mode service keys and licenses are deployment-local. After switching to Postgres mode, regenerate active service/admin keys and licenses from the shared store.
