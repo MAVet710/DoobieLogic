@@ -266,6 +266,7 @@ def health() -> dict[str, str]:
         "license_store_backend": str(license_diag.get("backend")),
         "key_store_backend": str(key_diag.get("backend")),
         "postgres_configured": "true" if bool(diagnostics["database_url_configured"]) else "false",
+        "postgres_config_source": str(diagnostics.get("database_url_source") or ""),
         "postgres_reachable": "true" if postgres_reachable else "false",
         "source_of_truth": source_of_truth,
         "warnings": ",".join(dict.fromkeys(warnings)) if warnings else "",

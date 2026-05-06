@@ -98,6 +98,7 @@ def resolve_doobie_config_source(
 @dataclass(frozen=True)
 class DoobieConfig:
     database_url: str
+    database_url_source: str
     api_key: str
     admin_api_key: str
     admin_api_base_url: str
@@ -134,6 +135,7 @@ class DoobieConfig:
             warnings.append("SERVICE_API_KEY_NOT_SET")
         return {
             "database_url_configured": bool(self.database_url),
+            "database_url_source": self.database_url_source or None,
             "backend_mode": self.backend_mode,
             "backend_mode_source": self.backend_mode_source,
             "preferred_backend_mode": self.preferred_backend_mode,
@@ -178,13 +180,23 @@ def load_doobie_config(env: Mapping[str, str] | None = None) -> DoobieConfig:
             "Set DOOBIE_BACKEND_MODE=remote_api and DOOBIE_ADMIN_API_BASE_URL."
         )
 
+    database_url = (
+        source.get("DOOBIE_DATABASE_URL")
+        or source.get("DATABASE_URL")
+        or source.get("POSTGRES_URL")
+        or ""
+    ).strip()
+    database_url_source = ""
+    if (source.get("DOOBIE_DATABASE_URL") or "").strip():
+        database_url_source = "DOOBIE_DATABASE_URL"
+    elif (source.get("DATABASE_URL") or "").strip():
+        database_url_source = "DATABASE_URL"
+    elif (source.get("POSTGRES_URL") or "").strip():
+        database_url_source = "POSTGRES_URL"
+
     return DoobieConfig(
-        database_url=(
-            source.get("DOOBIE_DATABASE_URL")
-            or source.get("DATABASE_URL")
-            or source.get("POSTGRES_URL")
-            or ""
-        ).strip(),
+        database_url=database_url,
+        database_url_source=database_url_source,
         api_key=(source.get("DOOBIE_API_KEY") or "").strip(),
         admin_api_key=(source.get("ADMIN_API_KEY") or "").strip(),
         admin_api_base_url=base_url,
