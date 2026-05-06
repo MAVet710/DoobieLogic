@@ -250,6 +250,10 @@ def health() -> dict[str, str]:
         if diagnostics["database_url_configured"]
         else False
     )
+    source_of_truth = "postgres_shared" if (license_diag.get("backend") == "postgres" and key_diag.get("backend") == "postgres") else "local_legacy"
+    warnings = list(diagnostics["warnings"])
+    if source_of_truth == "local_legacy" and diagnostics.get("production_like_env"):
+        warnings.append("Keys and licenses are deployment-local and may not survive redeploys.")
     return {
         "status": "ok",
         "service": "DoobieLogic API v4",
@@ -263,8 +267,8 @@ def health() -> dict[str, str]:
         "key_store_backend": str(key_diag.get("backend")),
         "postgres_configured": "true" if bool(diagnostics["database_url_configured"]) else "false",
         "postgres_reachable": "true" if postgres_reachable else "false",
-        "source_of_truth": "postgres_shared" if (license_diag.get("backend") == "postgres" and key_diag.get("backend") == "postgres") else "local_legacy",
-        "warnings": ",".join(diagnostics["warnings"]) if diagnostics["warnings"] else "",
+        "source_of_truth": source_of_truth,
+        "warnings": ",".join(dict.fromkeys(warnings)) if warnings else "",
     }
 
 

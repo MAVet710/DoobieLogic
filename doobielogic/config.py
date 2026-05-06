@@ -44,11 +44,14 @@ def _resolve_backend_mode(preferred_mode: str, base_url: str) -> tuple[str, str]
     normalized_mode = preferred_mode.strip().lower()
     if normalized_mode in {"", "auto"}:
         return ("remote_api", "auto") if base_url else ("local", "auto")
-    if normalized_mode in {"remote", "remote_api"}:
+    if normalized_mode in {"remote", "remote_api", "postgres"}:
         return "remote_api", "explicit"
     if normalized_mode == "local":
         return "local", "explicit"
-    raise ValueError(f"Unsupported DOOBIE_BACKEND_MODE: {preferred_mode!r}. Use one of: auto, local, remote_api.")
+    raise ValueError(
+        f"Unsupported DOOBIE_BACKEND_MODE: {preferred_mode!r}. "
+        "Use one of: auto, local, remote_api, remote, postgres."
+    )
 
 
 def _extract_known_keys(source: Mapping[str, object] | None) -> dict[str, str]:
@@ -122,8 +125,9 @@ class DoobieConfig:
             warnings.append("REMOTE_API_MODE_MISSING_ADMIN_API_KEY")
         if self.backend_mode == "local" and self.admin_api_key:
             warnings.append("ADMIN_API_KEY_SET_BUT_REMOTE_MODE_DISABLED")
-            if self.production_like_env:
-                warnings.append("PRODUCTION_CONFIG_DRIFT_RISK_LOCAL_MODE_ACTIVE")
+        if self.backend_mode == "local" and self.production_like_env:
+            warnings.append("PRODUCTION_CONFIG_DRIFT_RISK_LOCAL_MODE_ACTIVE")
+            warnings.append("Keys and licenses are deployment-local and may not survive redeploys.")
         if self.backend_mode_source == "auto":
             warnings.append("BACKEND_MODE_AUTO_DETECTED")
         if not self.api_key:
@@ -168,7 +172,7 @@ def load_doobie_config(env: Mapping[str, str] | None = None) -> DoobieConfig:
             "DOOBIE_ADMIN_API_BASE_URL is missing."
         )
 
-    if production_like_env and strict_config and resolved_mode == "local" and (source.get("ADMIN_API_KEY") or "").strip() and not base_url:
+    if production_like_env and strict_config and resolved_mode == "local" and not base_url:
         raise ValueError(
             "Production-like strict config error: local backend mode would drift from remote admin storage. "
             "Set DOOBIE_BACKEND_MODE=remote_api and DOOBIE_ADMIN_API_BASE_URL."

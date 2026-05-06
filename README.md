@@ -171,9 +171,12 @@ See full documentation in `docs/licensing.md`.
   - `POST <FASTAPI_BASE_URL>/api/v1/license/validate`
 - Required environment variables on the FastAPI service:
   - `DOOBIE_API_KEY` (service authentication key)
-  - `DOOBIE_LICENSE_STORE` (optional; defaults to `data/license_store.json`)
-  - `DOOBIE_KEY_DB` (optional; defaults to `data/key_store.db`)
+  - `DATABASE_URL` (or `DOOBIE_DATABASE_URL` / `POSTGRES_URL`) for persistent shared Postgres storage
+  - `DOOBIE_BACKEND_MODE=postgres` (recommended for production clarity; local mode is dev-only)
 - Optional admin key:
   - `ADMIN_API_KEY` (for admin endpoints only)
 - Health probe:
   - `GET <FASTAPI_BASE_URL>/health`
+
+
+For full production persistence setup, see `docs/postgres_persistence.md`.
