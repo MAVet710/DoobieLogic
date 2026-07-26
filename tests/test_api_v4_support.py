@@ -81,6 +81,36 @@ def test_copilot_auto_routes_and_accepts_conversation_history(monkeypatch):
     assert res.json()["routed_by"] == "Detected from your question"
 
 
+def test_compliance_question_without_jurisdiction_asks_a_natural_follow_up(monkeypatch):
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
+    res = client.post(
+        "/api/v1/support/copilot",
+        json={"question": "whats the new daily limit for adult use purchases"},
+    )
+    payload = res.json()
+    assert res.status_code == 200
+    assert payload["routed_mode"] == "compliance"
+    assert payload["needs_clarification"] is True
+    assert payload["missing_context"] == ["jurisdiction"]
+    assert "Which state or U.S. territory" in payload["answer"]
+
+
+def test_compliance_question_infers_named_jurisdiction(monkeypatch):
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
+    res = client.post(
+        "/api/v1/support/copilot",
+        json={"question": "What is the adult-use purchase limit in Massachusetts?"},
+    )
+    payload = res.json()
+    assert res.status_code == 200
+    assert payload["routed_mode"] == "compliance"
+    assert payload["compliance_context"]["code"] == "MA"
+    assert payload.get("needs_clarification") is not True
+    assert "2 ounces" in payload["answer"]
+    assert payload["rule_verified"] is True
+    assert payload["rule_effective_date"] == "2026-04-19"
+
+
 def test_legacy_hyphenated_support_route_remains_compatible(monkeypatch):
     monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
     res = client.post(
