@@ -49,8 +49,8 @@ def test_load_admin_auth_config_prefers_doobie_keys_and_supports_fallback_keys()
     assert fallback_cfg.password_hash == "$2b$12$I9nkXct74SUatWQTBRqPcOZ8SQppWtwpZqAVoUukKPDw0/GnhaW6C"
 
 
-def test_load_admin_auth_config_defaults_to_god_user_when_unconfigured():
+def test_load_admin_auth_config_has_no_public_default_credentials():
     cfg = load_admin_auth_config({}, {})
-    assert cfg.username == "God"
-    assert cfg.password_hash == "$2b$12$I9nkXct74SUatWQTBRqPcOZ8SQppWtwpZqAVoUukKPDw0/GnhaW6C"
-    assert verify_admin_credentials("God", "Major420", cfg) is True
+    assert cfg.username is None
+    assert cfg.password_hash is None
+    assert verify_admin_credentials("God", "Major420", cfg) is False

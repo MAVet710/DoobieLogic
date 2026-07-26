@@ -174,17 +174,19 @@ def _plan_answer(
     normalized_answer = quick_answer.strip()
     if any(marker in normalized_answer.lower() for marker in placeholder_markers):
         if risk_flags:
-            normalized_answer = f"Your top priority is to address {risk_flags[0].lower()} before scaling optimization work."
+            risk = risk_flags[0].rstrip(".").lower()
+            normalized_answer = f"Your top priority is to address {risk} before scaling optimization work."
         elif inefficiencies:
-            normalized_answer = f"The key fix is to remove this bottleneck first: {inefficiencies[0]}"
+            inefficiency = inefficiencies[0].rstrip(".")
+            normalized_answer = f"The key fix is to remove this bottleneck first: {inefficiency}."
         elif recommendations:
             normalized_answer = recommendations[0]
 
     support = []
     if risk_flags:
-        support.append(f"Main risk signal: {risk_flags[0]}.")
+        support.append(f"Main risk signal: {risk_flags[0].rstrip('.')}.")
     if inefficiencies:
-        support.append(f"Efficiency drag to fix: {inefficiencies[0]}.")
+        support.append(f"Efficiency drag to fix: {inefficiencies[0].rstrip('.')}.")
     if explanation_context:
         support.append(explanation_context.split("\n")[0].strip())
     if not support:
@@ -209,11 +211,11 @@ def _render_explanation(plan: AnswerPlan, citations: list[str], recommendations:
 
     if plan.response_shape == "risk_summary":
         detail = " ".join(plan.supporting_points)
-        return f"Risk view: {detail} Practical next step: {plan.next_step}.{citation_text}"
+        return f"Risk view: {detail} Practical next step: {plan.next_step.rstrip('.')}.{citation_text}"
 
     detail = " ".join(plan.supporting_points)
     rec = recommendations[0] if recommendations else plan.next_step
-    return f"{detail} The most useful move now is: {rec}.{citation_text}"
+    return f"{detail} The most useful move now is: {rec.rstrip('.')}.{citation_text}"
 
 
 def _build_response(
@@ -242,6 +244,13 @@ def _build_response(
         explanation_context=explanation_context.strip(),
     )
     explanation = _render_explanation(plan, citation_pool, clean_recommendations)
+    mode_config = RESPONSE_MODE_CONFIG.get(mode, RESPONSE_MODE_CONFIG["copilot"])
+    priorities = ", ".join(str(item) for item in mode_config.get("priorities", []))
+    focus_text = f"{mode.replace('_', ' ').title()} focus: {priorities}." if priorities else ""
+    context_text = explanation_context.strip()
+    details = "\n".join(part for part in (focus_text, context_text) if part)
+    if details:
+        explanation = f"{explanation}\n\n{details}"
     source_refs = _clean_list((sources or []) + citation_pool)
 
     return StructuredResponse(

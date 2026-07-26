@@ -38,3 +38,13 @@ def test_low_context_paths_return_low_confidence_and_lists():
     assert res.confidence == "low"
     assert isinstance(res.risk_flags, list)
     assert isinstance(res.inefficiencies, list)
+
+
+def test_standalone_question_returns_topic_specific_answer():
+    res = DoobieCopilot().ask(
+        "How should I manage cannabis open-to-buy inventory?",
+        persona="buyer",
+        state="MA",
+    )
+    assert "open-to-buy" in res.answer.lower()
+    assert "purchase" in res.answer.lower()
