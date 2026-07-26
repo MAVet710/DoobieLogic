@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 from doobielogic.jurisdictions import compliance_context_text, get_jurisdiction_context
 from doobielogic.module_curriculum import curriculum_prompt
+from doobielogic.professional_domains import professional_domain_prompt
 
 
 DEFAULT_MODEL = "gpt-5.6"
@@ -80,6 +81,7 @@ def _web_citation_sources(response: Any) -> list[str]:
 
 
 def build_conversation_instructions(mode: str, state: str | None = None) -> str:
+    specialist_prompt = professional_domain_prompt(mode) or curriculum_prompt(mode)
     compliance_policy = ""
     if mode == "compliance":
         compliance_policy = (
@@ -98,7 +100,7 @@ def build_conversation_instructions(mode: str, state: str | None = None) -> str:
         "measurements, laws, citations, or license requirements. Treat the supplied rules-engine result "
         "and source URLs as the evidence boundary. Ask for the minimum missing information when a "
         "responsible recommendation needs more evidence.\n\n"
-        f"{curriculum_prompt(mode)}"
+        f"{specialist_prompt}"
         f"{compliance_policy}"
     )
 

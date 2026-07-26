@@ -42,3 +42,20 @@ def test_routes_common_professional_phrasing_to_the_right_specialist():
     }
     for question, expected in examples.items():
         assert infer_intelligence_route(question).mode == expected
+
+
+def test_routes_extended_cannabis_business_domains():
+    examples = {
+        "How should QA investigate a product complaint and decide whether to recall it?": "quality",
+        "The lab reported an OOS result. Can we retest the sample?": "laboratory",
+        "How can wholesale improve OTIF and manifest accuracy?": "distribution",
+        "What do we do after a ransomware attack on an employee account?": "security",
+        "Build a 13-week cash flow forecast and collections plan.": "finance",
+        "Create a role-based onboarding and employee training matrix.": "people",
+        "Equipment downtime is rising. How should maintenance find the cause?": "maintenance",
+        "Did our loyalty campaign generate incremental gross profit?": "marketing",
+        "Give us stage gates for a new product scale-up and launch.": "product_development",
+        "How should we investigate a worker chemical exposure and near miss?": "ehs",
+    }
+    for question, expected in examples.items():
+        assert infer_intelligence_route(question).mode == expected

@@ -11,7 +11,7 @@ import streamlit as st
 from doobielogic.admin_auth import AdminAuthConfig, load_admin_auth_config
 from doobielogic.buyer_brain import summarize_buyer_opportunities
 from doobielogic.config import load_doobie_config
-from doobielogic.compliance_answers import answer_verified_compliance_question
+from doobielogic.compliance_answers import answer_verified_compliance_question, unverified_compliance_result
 from doobielogic.conversational_ai import ConversationService
 from doobielogic.copilot import DoobieCopilot
 from doobielogic.intelligence_router import IntelligenceRoute, infer_intelligence_route
@@ -20,6 +20,7 @@ from doobielogic.jurisdictions import (
     get_jurisdiction_context,
     infer_jurisdiction_code,
 )
+from doobielogic.operational_answers import answer_operational_question
 from doobielogic.parser import analyze_mapped_data, basic_cannabis_mapping, load_csv_bytes
 from doobielogic.ui_theme import apply_chat_theme
 from doobielogic.user_management import (
@@ -333,6 +334,30 @@ def _run_copilot(
                 data=data,
                 history=history,
             )
+    playbook = answer_operational_question(resolved_prompt, route.mode)
+    if playbook and route.mode != "compliance":
+        playbook["route_label"] = route.label
+        playbook["routed_by"] = route.reason
+        return get_conversation_service().enhance(
+            playbook,
+            question=resolved_prompt,
+            mode=playbook.get("mode", route.mode),
+            state=state,
+            data=data,
+            history=history,
+        )
+    if route.mode == "compliance":
+        unverified = unverified_compliance_result(resolved_prompt, state)
+        unverified["route_label"] = route.label
+        unverified["routed_by"] = route.reason
+        return get_conversation_service().enhance(
+            unverified,
+            question=resolved_prompt,
+            mode=route.mode,
+            state=state,
+            data=data,
+            history=history,
+        )
     if route.mode == "buyer":
         response = copilot.ask_with_buyer_brain(
             resolved_prompt,
