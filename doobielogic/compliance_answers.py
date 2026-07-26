@@ -92,3 +92,40 @@ def answer_verified_compliance_question(question: str, state: str | None) -> dic
         "rule_effective_date": rule.effective_date,
         "rule_verified": True,
     }
+
+
+def unverified_compliance_result(question: str, state: str) -> dict:
+    """Fail usefully when an exact current rule is not yet in the verified corpus."""
+
+    context = get_jurisdiction_context(state)
+    jurisdiction = context.jurisdiction if context else str(state or "").upper()
+    sources = []
+    if context:
+        sources = [f"{source.title}: {source.url}" for source in context.sources]
+    return {
+        "answer": (
+            f"I do not yet have a current, verified rule in the curated corpus that answers this exact "
+            f"{jurisdiction} question, so I will not guess. Use the official regulator and rule links below "
+            "to confirm the current text before changing operations."
+        ),
+        "explanation": (
+            f"Question requiring current verification: {question} "
+            "The jurisdiction registry supplies official entry points, but it is not itself proof of the exact rule."
+        ),
+        "recommendations": [
+            "Confirm the license type, program (adult-use or medical), transaction facts, and applicable local rules.",
+            "Review the current regulator rule, bulletins, and guidance at the official sources below.",
+            "Document the controlling section and effective date; escalate ambiguity to the regulator or qualified counsel.",
+        ],
+        "confidence": "low",
+        "sources": sources,
+        "mode": "compliance",
+        "risk_flags": ["Current exact rule text has not been verified in the curated corpus."],
+        "inefficiencies": [],
+        "routed_mode": "compliance",
+        "routed_by": "Detected from your question",
+        "needs_clarification": False,
+        "missing_context": [],
+        "compliance_context": context.to_dict() if context else None,
+        "rule_verified": False,
+    }
