@@ -111,6 +111,65 @@ def test_compliance_question_infers_named_jurisdiction(monkeypatch):
     assert payload["rule_effective_date"] == "2026-04-19"
 
 
+def test_compliance_follow_up_state_continues_previous_question(monkeypatch):
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
+    res = client.post(
+        "/api/v1/support/copilot",
+        json={
+            "question": "Massachusetts",
+            "history": [
+                {"role": "user", "content": "whats the new daily limit for adult use purchases"},
+                {"role": "assistant", "content": "Which state or U.S. territory are you asking about?"},
+            ],
+        },
+    )
+    payload = res.json()
+    assert res.status_code == 200
+    assert payload["routed_mode"] == "compliance"
+    assert payload["compliance_context"]["code"] == "MA"
+    assert "2 ounces" in payload["answer"]
+    assert payload["routed_by"] == "Continued from your previous compliance question"
+
+
+def test_common_operational_question_returns_actionable_playbook(monkeypatch):
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
+    res = client.post(
+        "/api/v1/support/copilot",
+        json={"question": "Our gummy potency varies across the batch. Give me a root-cause checklist."},
+    )
+    payload = res.json()
+    assert res.status_code == 200
+    assert payload["routed_mode"] == "kitchen"
+    assert "Quarantine the batch" in payload["answer"]
+    assert len(payload["recommendations"]) >= 3
+
+
+def test_unverified_compliance_question_fails_usefully_with_official_sources(monkeypatch):
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
+    res = client.post(
+        "/api/v1/support/copilot",
+        json={"question": "Can a dispensary transfer cannabis to another store in New Jersey?"},
+    )
+    payload = res.json()
+    assert res.status_code == 200
+    assert payload["routed_mode"] == "compliance"
+    assert payload["rule_verified"] is False
+    assert "will not guess" in payload["answer"]
+    assert payload["sources"]
+
+
+def test_id_queue_question_gets_operational_answer_without_inventing_a_rule(monkeypatch):
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
+    res = client.post(
+        "/api/v1/support/copilot",
+        json={"question": "How can we reduce wait time while keeping ID verification compliant?"},
+    )
+    payload = res.json()
+    assert res.status_code == 200
+    assert payload["mode"] == "retail_ops"
+    assert "arrival and ID verification" in payload["answer"]
+
+
 def test_legacy_hyphenated_support_route_remains_compatible(monkeypatch):
     monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
     res = client.post(

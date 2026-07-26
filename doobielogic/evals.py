@@ -43,15 +43,26 @@ def apply_low_confidence_fallback(response: dict[str, Any]) -> dict[str, Any]:
         return response
 
     safe = dict(response)
-    safe["answer"] = "Insufficient confidence for a definitive recommendation."
-    safe["explanation"] = (
-        "A safe fallback response was returned because confidence is low. "
-        "Please validate data completeness and request additional context."
+    answer = str(safe.get("answer") or "").strip()
+    placeholder = (
+        not answer
+        or answer.casefold() in {"guess", "maybe", "unknown"}
+        or "brief generated" in answer.casefold()
     )
-    safe["recommendations"] = [
-        "Verify key KPIs and upload structured department data.",
-        "Re-run request with clearer mode (buyer, inventory, extraction, ops).",
-    ]
+    if placeholder:
+        safe["answer"] = (
+            "I need a little more operating context to answer responsibly, but I can still help you "
+            "structure the diagnosis."
+        )
+    safe["explanation"] = (
+        str(safe.get("explanation") or "").strip()
+        + "\n\nConfidence is low because facility-level evidence is incomplete; treat assumptions as a "
+        "diagnostic starting point and verify them against current records."
+    ).strip()
+    recommendations = list(safe.get("recommendations") or [])
+    if not recommendations:
+        recommendations = ["Provide the location, time window, relevant KPIs, and source records."]
+    safe["recommendations"] = recommendations
     safe["sources"] = response.get("sources") or []
     safe["confidence"] = "low"
     return safe

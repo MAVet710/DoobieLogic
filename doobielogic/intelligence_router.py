@@ -53,6 +53,12 @@ _KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "patient limit",
             "how much cannabis",
             "how much marijuana",
+            "transfer cannabis",
+            "transfer marijuana",
+            "records must",
+            "record retention",
+            "retain for",
+            "id verification",
         ),
     ),
     (
@@ -70,6 +76,9 @@ _KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "resin",
             "biomass",
             "failed batch",
+            "hydrocarbon",
+            "run yield",
+            "residual solvent",
         ),
     ),
     (
@@ -109,6 +118,9 @@ _KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "packout",
             "child resistant",
             "finished goods",
+            "mislabel",
+            "mislabeling",
+            "label error",
         ),
     ),
     (
@@ -129,6 +141,11 @@ _KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "stockout",
             "assortment",
             "sku",
+            "vendor",
+            "minimum order",
+            "moq",
+            "negative on-hand",
+            "negative on hand",
         ),
     ),
     (
@@ -142,6 +159,8 @@ _KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "conversion",
             "promotion",
             "merchandising",
+            "attach rate",
+            "wait time",
         ),
     ),
     (
@@ -156,6 +175,8 @@ _KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "profitability",
             "margin",
             "forecast",
+            "weekly operating review",
+            "operating review agenda",
         ),
     ),
     (

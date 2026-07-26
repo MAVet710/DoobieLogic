@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from doobielogic.copilot import DoobieCopilot
 from doobielogic.config import load_doobie_config
-from doobielogic.compliance_answers import answer_verified_compliance_question
+from doobielogic.compliance_answers import answer_verified_compliance_question, unverified_compliance_result
 from doobielogic.conversational_ai import ConversationService
 from doobielogic.evals import apply_low_confidence_fallback
 from doobielogic.intelligence_v3 import build_intel_v3
@@ -21,6 +21,7 @@ from doobielogic.jurisdictions import (
     infer_jurisdiction_code,
 )
 from doobielogic.module_curriculum import MODULE_CURRICULA
+from doobielogic.operational_answers import answer_operational_question
 from doobielogic.admin_auth import load_admin_auth_config, verify_admin_credentials
 from doobielogic.key_management import KEY_ROLE_ADMIN, KEY_ROLE_SERVICE, KeyStore
 from doobielogic.learning_store_v1 import log_event, summarize_learning
@@ -435,6 +436,23 @@ def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None
     }
     mode = mode_aliases.get(requested_mode, requested_mode)
     routed_by = "Requested by client"
+    followup_state = infer_jurisdiction_code(question)
+    if mode in {"", "auto", "automatic"} and followup_state and len(question.split()) <= 4:
+        prior_user_question = next(
+            (
+                str(item.get("content") or "").strip()
+                for item in reversed(req.history)
+                if str(item.get("role") or "").strip().casefold() == "user"
+                and str(item.get("content") or "").strip()
+            ),
+            "",
+        )
+        if prior_user_question and infer_intelligence_route(prior_user_question, data=req.data).mode == "compliance":
+            question = prior_user_question
+            req.question = prior_user_question
+            req.state = followup_state
+            mode = "compliance"
+            routed_by = "Continued from your previous compliance question"
     if mode in {"", "auto", "automatic"}:
         route = infer_intelligence_route(question, data=req.data)
         mode = route.mode
@@ -443,6 +461,19 @@ def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None
     inferred_state = req.state or infer_jurisdiction_code(question)
     if inferred_state:
         req.state = inferred_state
+
+    playbook = answer_operational_question(question, mode)
+    if playbook and (mode != "compliance" or playbook.get("mode") != "compliance"):
+        playbook["routed_by"] = routed_by
+        playbook_mode = str(playbook.get("mode") or mode)
+        return CONVERSATION.enhance(
+            playbook,
+            question=question,
+            mode=playbook_mode,
+            state=req.state,
+            data=req.data,
+            history=req.history,
+        )
 
     if mode in {"buyer", "inventory"}:
         resp = COPILOT.ask_with_buyer_brain(question, mapped_data=req.data, persona="buyer", state=req.state)
@@ -480,14 +511,16 @@ def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None
                 data=req.data,
                 history=req.history,
             )
-        resp = COPILOT.ask_with_operations(
-            question,
-            department="compliance",
-            parsed_data=req.data,
-            persona="compliance",
+        unverified = unverified_compliance_result(question, req.state)
+        unverified["routed_by"] = routed_by
+        return CONVERSATION.enhance(
+            unverified,
+            question=question,
+            mode="compliance",
             state=req.state,
+            data=req.data,
+            history=req.history,
         )
-        return _support_response(resp, mode="compliance", state=req.state, routed_by=routed_by, request=req)
     if mode == "executive":
         resp = COPILOT.ask(question, persona="executive", state=req.state)
         return _support_response(resp, mode="executive", state=req.state, routed_by=routed_by, request=req)
