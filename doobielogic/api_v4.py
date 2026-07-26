@@ -48,7 +48,7 @@ class LearnReq(BaseModel):
 
 
 class SupportReq(BaseModel):
-    question: str
+    question: str = ""
     state: str | None = None
     data: dict[str, Any] = Field(default_factory=dict)
     mode: str | None = None
@@ -239,6 +239,10 @@ def _support_response(resp, mode: str) -> dict[str, Any]:
     return apply_low_confidence_fallback(standard)
 
 
+def _support_question(req: SupportReq, default: str) -> str:
+    return (req.question or "").strip() or default
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     diagnostics = CONFIG.diagnostics()
@@ -273,6 +277,15 @@ def health() -> dict[str, str]:
     }
 
 
+@app.get("/api/v1/auth/check")
+def auth_check(
+    x_api_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
+    return {"authenticated": True, "service": "DoobieLogic", "api_version": "v4"}
+
+
 @app.post("/buyer/intelligence")
 def buyer(req: BuyerReq, x_api_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
     require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
@@ -297,53 +310,69 @@ def learning_summary(x_api_key: str | None = Header(default=None), authorization
     return summarize_learning()
 
 
+@app.post("/api/v1/support/buyer-brief", include_in_schema=False)
 @app.post("/api/v1/support/buyer_brief")
 def support_buyer_brief(req: SupportReq, x_api_key: str | None = Header(default=None), authorization: str | None = Header(default=None)) -> dict[str, Any]:
     require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
-    resp = COPILOT.ask_with_buyer_brain(req.question, mapped_data=req.data, persona="buyer", state=req.state)
+    question = _support_question(req, "What should the buyer prioritize from this dataset?")
+    resp = COPILOT.ask_with_buyer_brain(question, mapped_data=req.data, persona="buyer", state=req.state)
     return _support_response(resp, mode="buyer")
 
 
+@app.post("/api/v1/support/inventory-check", include_in_schema=False)
 @app.post("/api/v1/support/inventory_check")
 def support_inventory_check(req: SupportReq, x_api_key: str | None = Header(default=None), authorization: str | None = Header(default=None)) -> dict[str, Any]:
     require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
-    resp = COPILOT.ask_with_buyer_brain(req.question, mapped_data=req.data, persona="buyer", state=req.state)
+    question = _support_question(req, "Which inventory risks need immediate attention?")
+    resp = COPILOT.ask_with_buyer_brain(question, mapped_data=req.data, persona="buyer", state=req.state)
     return _support_response(resp, mode="inventory")
 
 
+@app.post("/api/v1/support/extraction-brief", include_in_schema=False)
 @app.post("/api/v1/support/extraction_brief")
 def support_extraction_brief(req: SupportReq, x_api_key: str | None = Header(default=None), authorization: str | None = Header(default=None)) -> dict[str, Any]:
     require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
-    resp = COPILOT.ask_with_operations(req.question, department="extraction", parsed_data=req.data, persona="extraction", state=req.state)
+    question = _support_question(req, "Which extraction risks and process opportunities matter most?")
+    resp = COPILOT.ask_with_operations(question, department="extraction", parsed_data=req.data, persona="extraction", state=req.state)
     return _support_response(resp, mode="extraction")
 
 
+@app.post("/api/v1/support/ops-brief", include_in_schema=False)
 @app.post("/api/v1/support/ops_brief")
 def support_ops_brief(req: SupportReq, x_api_key: str | None = Header(default=None), authorization: str | None = Header(default=None)) -> dict[str, Any]:
     require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
     department = (req.department or "operations").lower()
-    resp = COPILOT.ask_with_operations(req.question, department=department, parsed_data=req.data, persona="ops", state=req.state)
+    question = _support_question(req, "Which operational bottlenecks should we address first?")
+    resp = COPILOT.ask_with_operations(question, department=department, parsed_data=req.data, persona="ops", state=req.state)
     return _support_response(resp, mode="ops")
 
 
 @app.post("/api/v1/support/copilot")
 def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None), authorization: str | None = Header(default=None)) -> dict[str, Any]:
     require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
-    mode = (req.mode or req.persona or "buyer").lower()
+    question = _support_question(req, "What is the most useful cannabis operations action to take next?")
+    requested_mode = (req.mode or req.persona or "copilot").strip().lower()
+    mode_aliases = {
+        "buyer_assistant": "buyer",
+        "support": "copilot",
+        "main": "copilot",
+        "operations": "ops",
+    }
+    mode = mode_aliases.get(requested_mode, requested_mode)
 
     if mode in {"buyer", "inventory"}:
-        resp = COPILOT.ask_with_buyer_brain(req.question, mapped_data=req.data, persona="buyer", state=req.state)
+        resp = COPILOT.ask_with_buyer_brain(question, mapped_data=req.data, persona="buyer", state=req.state)
         return _support_response(resp, mode=mode)
     if mode == "extraction":
-        resp = COPILOT.ask_with_operations(req.question, department="extraction", parsed_data=req.data, persona="extraction", state=req.state)
+        resp = COPILOT.ask_with_operations(question, department="extraction", parsed_data=req.data, persona="extraction", state=req.state)
         return _support_response(resp, mode="extraction")
     if mode in {"ops", "operations"}:
         dept = (req.department or "operations").lower()
-        resp = COPILOT.ask_with_operations(req.question, department=dept, parsed_data=req.data, persona="ops", state=req.state)
+        resp = COPILOT.ask_with_operations(question, department=dept, parsed_data=req.data, persona="ops", state=req.state)
         return _support_response(resp, mode="ops")
     if mode in {"retail_ops", "cultivation", "kitchen", "packaging"}:
         resp = COPILOT.ask_with_operations(
-            req.question,
+            question,
             department=mode,
             parsed_data=req.data,
             persona=mode,  # type: ignore[arg-type]
@@ -352,17 +381,19 @@ def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None
         return _support_response(resp, mode=mode)
     if mode == "compliance":
         resp = COPILOT.ask_with_operations(
-            req.question,
+            question,
             department="compliance",
             parsed_data=req.data,
             persona="compliance",
             state=req.state,
         )
         return _support_response(resp, mode="compliance")
+    if mode == "executive":
+        resp = COPILOT.ask(question, persona="executive", state=req.state)
+        return _support_response(resp, mode="executive")
 
-    resp = COPILOT.ask(req.question, persona="executive", state=req.state)
-    routed_persona = "executive"
-    return _support_response(resp, mode=routed_persona)
+    resp = COPILOT.ask(question, persona="copilot", state=req.state)
+    return _support_response(resp, mode="copilot")
 
 
 @app.post("/api/v1/license/validate")

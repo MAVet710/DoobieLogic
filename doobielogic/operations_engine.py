@@ -9,9 +9,26 @@ from doobielogic.packaging_ops import build_packaging_action_plan, render_packag
 from doobielogic.retail_ops import build_retail_action_plan, render_retail_action_plan
 
 
+def _columnar_data(parsed_data: dict | None) -> dict:
+    """Accept both one-record API payloads and dashboard-style column arrays."""
+    normalized: dict = {}
+    for key, value in (parsed_data or {}).items():
+        if value is None:
+            normalized[key] = []
+        elif isinstance(value, list):
+            normalized[key] = value
+        elif isinstance(value, (tuple, set)):
+            normalized[key] = list(value)
+        elif isinstance(value, dict):
+            normalized[key] = value
+        else:
+            normalized[key] = [value]
+    return normalized
+
+
 def build_operations_outputs(parsed_data: dict | None, department: str, state: str | None = None) -> dict:
     dept = (department or "retail_ops").lower()
-    data = parsed_data or {}
+    data = _columnar_data(parsed_data)
     knowledge = search_department_knowledge(dept if dept != "buyer" else "retail_ops", " ".join(data.keys()) if data else "operational risk controls", limit=5)
 
     if dept in {"retail_ops", "buyer"}:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -59,7 +60,7 @@ class CannabisKnowledgeBase:
         return sqlite3.connect(self.db_path)
 
     def _init_db(self) -> None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS knowledge_entries (
@@ -84,9 +85,10 @@ class CannabisKnowledgeBase:
                 )
                 """
             )
+            conn.commit()
 
     def _seed_if_empty(self) -> None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             count = conn.execute("SELECT COUNT(*) FROM knowledge_entries").fetchone()[0]
             if count:
                 return
@@ -94,15 +96,16 @@ class CannabisKnowledgeBase:
                 "INSERT INTO knowledge_entries (category, title, content, tags, source_url) VALUES (?, ?, ?, ?, ?)",
                 [(e.category, e.title, e.content, e.tags, e.source_url) for e in DEFAULT_KNOWLEDGE],
             )
+            conn.commit()
 
     def categories(self) -> list[str]:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             rows = conn.execute("SELECT DISTINCT category FROM knowledge_entries ORDER BY category").fetchall()
         return [r[0] for r in rows]
 
     def ask(self, question: str, limit: int = 5) -> dict:
         tokens = _tokens(question)
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             rows = conn.execute("SELECT category, title, content, tags, source_url FROM knowledge_entries").fetchall()
 
         scored: list[tuple[int, str, str, str, str, str]] = []
@@ -137,7 +140,7 @@ class CannabisKnowledgeBase:
         return {"question": question, "answer": answer, "matches": matches}
 
     def learn_from_feedback(self, persona: str, question: str, answer: str, helpful: bool) -> None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             conn.execute(
                 "INSERT INTO feedback_log (persona, question, answer, helpful) VALUES (?, ?, ?, ?)",
                 (persona, question, answer, 1 if helpful else 0),
@@ -153,6 +156,7 @@ class CannabisKnowledgeBase:
                         "https://internal.doobielogic.local/feedback",
                     ),
                 )
+            conn.commit()
 
 
 def _tokens(text: str) -> list[str]:

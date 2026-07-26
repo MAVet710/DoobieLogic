@@ -28,6 +28,53 @@ def test_support_response_format(monkeypatch):
     assert set(payload.keys()) == {'answer', 'explanation', 'recommendations', 'confidence', 'sources', 'mode', 'risk_flags', 'inefficiencies'}
 
 
+def test_auth_check_uses_v4_service_auth(monkeypatch):
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "abc123")
+    res = client.get("/api/v1/auth/check", headers={"x-api-key": "abc123"})
+    assert res.status_code == 200
+    assert res.json() == {
+        "authenticated": True,
+        "service": "DoobieLogic",
+        "api_version": "v4",
+    }
+
+
+def test_legacy_hyphenated_support_route_remains_compatible(monkeypatch):
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
+    res = client.post(
+        "/api/v1/support/inventory-check",
+        json={"state": "MA", "data": {"days_on_hand": 8}},
+    )
+    assert res.status_code == 200
+    assert res.json()["mode"] == "inventory"
+
+
+def test_unknown_copilot_persona_routes_to_general_copilot(monkeypatch):
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
+    res = client.post(
+        "/api/v1/support/copilot",
+        json={"question": "What should I focus on?", "persona": "legacy_unknown", "data": {}},
+    )
+    assert res.status_code == 200
+    assert res.json()["mode"] == "copilot"
+
+
+def test_extraction_support_accepts_single_record_scalar_values(monkeypatch):
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
+    res = client.post(
+        "/api/v1/support/copilot",
+        json={
+            "question": "How do I improve extraction yield?",
+            "mode": "extraction",
+            "state": "MA",
+            "data": {"yield_pct": 0.45, "failed_batches": 1},
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["mode"] == "extraction"
+    assert res.json()["answer"]
+
+
 def test_validate_key_endpoint(monkeypatch, tmp_path):
     store = KeyStore(path=tmp_path / "keys.db")
     generated = store.create_api_key(

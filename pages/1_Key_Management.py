@@ -185,9 +185,9 @@ else:
 
 st.markdown("### Admin console status")
 if st.session_state.get("admin_authenticated"):
-    st.success("God login status: **Authenticated**")
+    st.success("Admin login status: **Authenticated**")
 else:
-    st.error("God login status: **Locked**")
+    st.error("Admin login status: **Locked**")
 
 if bootstrap_mode is True:
     st.warning("Bootstrap status: **Needs initial persistent admin API key**")

@@ -20,6 +20,11 @@ def analyze_throughput(data: dict) -> dict:
 
 def flag_extraction_risk_signals(data: dict) -> dict:
     failed = sum(1 for x in data.get("pass_fail", []) if str(x).lower() == "fail")
+    for value in data.get("failed_batches", []):
+        try:
+            failed += max(0, int(float(value)))
+        except (TypeError, ValueError):
+            continue
     flagged = sum(1 for x in data.get("residual_solvent_flag", []) if bool(x))
     rework = sum(1 for x in data.get("rework_flag", []) if bool(x))
     return {"status": "ok", "failed_batches": failed, "residual_flags": flagged, "rework_batches": rework}

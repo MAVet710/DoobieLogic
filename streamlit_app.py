@@ -63,11 +63,22 @@ def _initialize_session_state() -> None:
 
 
 def _render_admin_login_gate() -> bool:
-    config = load_admin_auth_config(st.secrets if hasattr(st, "secrets") else None, os.environ)
+    try:
+        secrets = st.secrets.to_dict() if hasattr(st, "secrets") else {}
+    except Exception:
+        secrets = {}
+    config = load_admin_auth_config(secrets, os.environ)
+    st.session_state["admin_auth_enabled"] = bool(config.password_hash)
+    require_login = str(os.environ.get("DOOBIE_REQUIRE_LOGIN", "")).strip().lower() in {"1", "true", "yes", "on"}
 
     if not config.password_hash:
-        st.error("Admin authentication is not configured: password hash secret is missing.")
-        return False
+        if require_login:
+            st.error(
+                "Login is required but no password hash is configured. "
+                "Set DOOBIE_ADMIN_PASSWORD_HASH and optionally DOOBIE_ADMIN_USERNAME."
+            )
+            return False
+        return True
 
     if st.session_state.get("admin_authenticated"):
         return True
@@ -157,6 +168,18 @@ def _render_chat_history() -> None:
             st.markdown("### ⚡ Next Moves")
             for recommendation in recommendations:
                 st.write(f"- {recommendation}")
+
+        risk_flags = res.get("risk_flags", []) or []
+        if risk_flags:
+            st.markdown("### Risk flags")
+            for risk in risk_flags:
+                st.write(f"- {risk}")
+
+        inefficiencies = res.get("inefficiencies", []) or []
+        if inefficiencies:
+            st.markdown("### Inefficiencies")
+            for inefficiency in inefficiencies:
+                st.write(f"- {inefficiency}")
     logger.info("Chat history rendered in %.4fs", perf_counter() - chat_render_start)
 
 
@@ -184,10 +207,22 @@ def main() -> None:
 
     sidebar_start = perf_counter()
     st.sidebar.header("Workspace")
-    if st.sidebar.button("Log out", key="app_admin_logout"):
+    if st.session_state.get("admin_auth_enabled") and st.sidebar.button("Log out", key="app_admin_logout"):
         st.session_state["admin_authenticated"] = False
         st.rerun()
-    persona_options = ["buyer", "retail_ops", "compliance", "extraction", "executive"]
+    persona_options = [
+        "buyer",
+        "inventory",
+        "retail_ops",
+        "cultivation",
+        "extraction",
+        "kitchen",
+        "packaging",
+        "ops",
+        "compliance",
+        "executive",
+        "copilot",
+    ]
     if st.session_state.persona not in persona_options:
         st.session_state.persona = "buyer"
     st.session_state.persona = st.sidebar.selectbox(
@@ -255,7 +290,15 @@ def main() -> None:
     with st.form("ask_copilot_form", clear_on_submit=False):
         quick_action = st.selectbox(
             "Quick actions",
-            ["None", "slow movers", "reorder opportunities", "markdown candidates", "category risk"],
+            [
+                "None",
+                "highest-priority risks",
+                "next operational actions",
+                "slow movers",
+                "reorder opportunities",
+                "markdown candidates",
+                "compliance checks",
+            ],
             key="quick_action_select",
         )
         prompt = st.text_area("Ask anything", placeholder="Why is my inventory not moving?", height=120, key="prompt_area")
@@ -272,15 +315,33 @@ def main() -> None:
         else:
             ask_started = perf_counter()
             try:
-                if st.session_state.mapped_data:
+                persona = st.session_state.persona
+                if st.session_state.mapped_data and persona in {"buyer", "inventory"}:
                     response = copilot.ask_with_buyer_brain(
                         final_prompt,
                         mapped_data=st.session_state.mapped_data,
-                        persona=st.session_state.persona,
+                        persona="buyer",
+                        state=st.session_state.state,
+                    )
+                elif st.session_state.mapped_data and persona in {
+                    "retail_ops",
+                    "cultivation",
+                    "extraction",
+                    "kitchen",
+                    "packaging",
+                    "ops",
+                    "compliance",
+                }:
+                    department = "operations" if persona == "ops" else persona
+                    response = copilot.ask_with_operations(
+                        final_prompt,
+                        department=department,
+                        parsed_data=st.session_state.mapped_data,
+                        persona=persona,
                         state=st.session_state.state,
                     )
                 else:
-                    response = copilot.ask(final_prompt, persona=st.session_state.persona, state=st.session_state.state)
+                    response = copilot.ask(final_prompt, persona=persona, state=st.session_state.state)
 
                 st.session_state.chat_history.append({"q": final_prompt, "res": asdict(response)})
             except Exception:  # visible debug instead of white-screen failure

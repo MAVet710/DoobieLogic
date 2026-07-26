@@ -8,12 +8,6 @@ import bcrypt
 SECRET_USERNAME_KEYS: tuple[str, ...] = ("DOOBIE_ADMIN_USERNAME", "ADMIN_USERNAME")
 SECRET_PASSWORD_HASH_KEYS: tuple[str, ...] = ("DOOBIE_ADMIN_PASSWORD_HASH", "ADMIN_PASSWORD_HASH")
 
-# Preset bootstrap admin credentials for zero-config deployments.
-DEFAULT_ADMIN_USERNAME = "God"
-# bcrypt hash for plaintext password: Major420
-DEFAULT_ADMIN_PASSWORD_HASH = "$2b$12$I9nkXct74SUatWQTBRqPcOZ8SQppWtwpZqAVoUukKPDw0/GnhaW6C"
-
-
 @dataclass(frozen=True)
 class AdminAuthConfig:
     username: str | None
@@ -21,10 +15,13 @@ class AdminAuthConfig:
 
 
 def _first_present(source: Mapping[str, object] | None, keys: tuple[str, ...]) -> str | None:
-    if not source:
+    if source is None:
         return None
     for key in keys:
-        value = source.get(key)
+        try:
+            value = source.get(key)
+        except Exception:
+            return None
         if value is None:
             continue
         safe_value = str(value).strip()
@@ -35,10 +32,13 @@ def _first_present(source: Mapping[str, object] | None, keys: tuple[str, ...]) -
 
 def _compat_from_auth_admins(source: Mapping[str, object] | None) -> tuple[str | None, str | None]:
     """Compatibility fallback for Streamlit secrets shaped as [auth.admins]."""
-    if not source:
+    if source is None:
         return None, None
 
-    auth_block = source.get("auth")
+    try:
+        auth_block = source.get("auth")
+    except Exception:
+        return None, None
     if not isinstance(auth_block, Mapping):
         return None, None
 
@@ -68,10 +68,6 @@ def load_admin_auth_config(
     if env:
         username = username or _first_present(env, SECRET_USERNAME_KEYS)
         password_hash = password_hash or _first_present(env, SECRET_PASSWORD_HASH_KEYS)
-
-    # Guarantee a working admin account in all scenarios unless explicitly overridden.
-    username = username or DEFAULT_ADMIN_USERNAME
-    password_hash = password_hash or DEFAULT_ADMIN_PASSWORD_HASH
 
     return AdminAuthConfig(username=username, password_hash=password_hash)
 

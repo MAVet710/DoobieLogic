@@ -17,6 +17,7 @@ class DepartmentKnowledgeEntry:
 
 _ENTRIES: tuple[DepartmentKnowledgeEntry, ...] = (
     # Buyer
+    DepartmentKnowledgeEntry("buyer", "open-to-buy", "Open-to-buy protects purchasing capacity", "Open-to-buy is the remaining category purchase budget after planned sales, current inventory, and committed orders are considered.", "Calculate OTB by category and period, then reserve capacity for proven velocity and known assortment gaps.", "grounded_operational_reference", "high", ("open-to-buy", "open to buy", "otb", "purchase budget")),
     DepartmentKnowledgeEntry("buyer", "assortment strategy", "Assortment depth should follow proven velocity", "Depth in proven movers usually outperforms broad low-velocity tails.", "Protect core winners before adding long-tail SKUs.", "heuristic_operational_pattern", "medium", ("assortment", "depth", "breadth", "velocity")),
     DepartmentKnowledgeEntry("buyer", "pricing ladders", "Price ladders improve menu conversion", "Missing entry/core/premium price points creates avoidable conversion loss.", "Maintain opening, mid-tier, and premium options in key categories.", "grounded_operational_reference", "high", ("pricing", "ladder", "premium", "entry")),
     DepartmentKnowledgeEntry("buyer", "vendor scorecard", "Vendor quality and fill reliability should be explicit", "Fill-rate and defect drift can erase headline margin gains.", "Use vendor scorecards with quality and service metrics.", "grounded_operational_reference", "high", ("vendor", "fill rate", "defect", "coa")),

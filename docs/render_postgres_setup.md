@@ -10,12 +10,7 @@ Use this when deploying DoobieLogic on Render so API keys and license records pe
 
 ```bash
 DOOBIE_DATABASE_URL=<Render Postgres Internal Database URL>
-DOOBIE_BACKEND_MODE=auto
-```
-
-Optional hardening:
-
-```bash
+DOOBIE_BACKEND_MODE=postgres
 DOOBIE_STRICT_CONFIG=true
 ```
 
@@ -56,7 +51,7 @@ After moving from local sqlite to Postgres, regenerate as needed:
 
 Reason: old deployment-local keys/licenses may not exist in the shared Postgres store.
 
-## 6) Optional strict production guardrail
+## 6) Strict production guardrail
 
 With `DOOBIE_STRICT_CONFIG=true`, startup fails in production-like environments if no DB URL is configured.
 This prevents accidental deployment-local key/license storage.

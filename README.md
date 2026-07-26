@@ -58,6 +58,11 @@ pip install -e .
 streamlit run streamlit_app.py
 ```
 
+The standalone copilot is open by default for local use. To require a login,
+set `DOOBIE_REQUIRE_LOGIN=true`, `DOOBIE_ADMIN_PASSWORD_HASH`, and optionally
+`DOOBIE_ADMIN_USERNAME`. Never store plaintext or shared credentials in the
+repository.
+
 ## API run
 
 ```bash

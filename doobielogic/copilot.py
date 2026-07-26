@@ -161,13 +161,13 @@ class DoobieCopilot:
             if self._to_float(data.get("queue_wait_minutes")) is not None and float(data.get("queue_wait_minutes")) > 8:
                 inefficiencies.append("Queue wait time is above service-level target and reduces throughput.")
         if mode == "cultivation":
-            if sum(1 for x in data.get("microbial_risk_flag", []) if bool(x)) > 0:
+            if sum(1 for x in self._values(data.get("microbial_risk_flag")) if bool(x)) > 0:
                 inefficiencies.append("Microbial flags indicate cultivation control drift and release delays.")
         if mode == "kitchen":
-            if sum(1 for x in data.get("rework_flag", []) if bool(x)) > 0:
+            if sum(1 for x in self._values(data.get("rework_flag")) if bool(x)) > 0:
                 inefficiencies.append("Kitchen rework is consuming capacity and delaying release.")
         if mode == "packaging":
-            if sum(1 for x in data.get("label_error_flag", []) if bool(x)) > 0:
+            if sum(1 for x in self._values(data.get("label_error_flag")) if bool(x)) > 0:
                 inefficiencies.append("Packaging label errors are driving rework and compliance exposure.")
         return inefficiencies
 
@@ -201,19 +201,19 @@ class DoobieCopilot:
             if self._to_float(data.get("discount_rate")) is not None and float(data.get("discount_rate")) > 0.18:
                 risks.append("discount overuse risk")
         if mode == "cultivation":
-            if sum(1 for x in data.get("microbial_risk_flag", []) if bool(x)) > 0:
+            if sum(1 for x in self._values(data.get("microbial_risk_flag")) if bool(x)) > 0:
                 risks.append("microbial flags")
-            if sum(1 for x in data.get("moisture_risk_flag", []) if bool(x)) > 0:
+            if sum(1 for x in self._values(data.get("moisture_risk_flag")) if bool(x)) > 0:
                 risks.append("moisture instability")
         if mode == "kitchen":
-            if sum(1 for x in data.get("sanitation_gap_flag", []) if bool(x)) > 0:
+            if sum(1 for x in self._values(data.get("sanitation_gap_flag")) if bool(x)) > 0:
                 risks.append("sanitation gap")
             if self._to_float(data.get("dosage_variance_pct")) is not None and float(data.get("dosage_variance_pct")) > 10:
                 risks.append("dosage variance")
         if mode == "packaging":
-            if sum(1 for x in data.get("label_error_flag", []) if bool(x)) > 0:
+            if sum(1 for x in self._values(data.get("label_error_flag")) if bool(x)) > 0:
                 risks.append("label error risk")
-            if any(abs(float(x)) > 2 for x in data.get("reconciliation_variance", []) if x is not None):
+            if any(abs(float(x)) > 2 for x in self._values(data.get("reconciliation_variance")) if x is not None):
                 risks.append("reconciliation variance")
 
         deduped: list[str] = []
@@ -225,12 +225,26 @@ class DoobieCopilot:
 
     @staticmethod
     def _to_float(value: Any) -> float | None:
+        if isinstance(value, (list, tuple, set)):
+            numbers = [DoobieCopilot._to_float(item) for item in value]
+            present = [item for item in numbers if item is not None]
+            return (sum(present) / len(present)) if present else None
         try:
             if value is None or value == "":
                 return None
             return float(value)
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _values(value: Any) -> list[Any]:
+        if value is None or value == "":
+            return []
+        if isinstance(value, list):
+            return value
+        if isinstance(value, (tuple, set)):
+            return list(value)
+        return [value]
 
     def ask(self, question: str, persona: Persona = "buyer", state: str | None = None) -> CopilotResponse:
         safe_persona = self._normalize_persona(persona)
@@ -253,7 +267,13 @@ class DoobieCopilot:
                 "Grounded source context:\n" + grounded["answer"],
             ]
         )
-        answer = f"{safe_persona.title()} brief ready with {confidence} confidence."
+        if knowledge:
+            top_match = knowledge[0]
+            answer = f"{top_match['summary']} {top_match['guidance']}"
+        elif grounded.get("matches"):
+            answer = str(grounded["matches"][0].get("summary") or "").strip()
+        else:
+            answer = "The available evidence is too limited for a definitive answer; add operational data or a curated source."
 
         risks = self._detect_mode_risks(context_mode, context, data={})
         inefficiencies = self._extract_inefficiencies(context_mode, data={})
