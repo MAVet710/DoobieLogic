@@ -22,6 +22,7 @@ from doobielogic.jurisdictions import (
 )
 from doobielogic.module_curriculum import MODULE_CURRICULA
 from doobielogic.operational_answers import answer_operational_question
+from doobielogic.professional_domains import professional_domain_catalog
 from doobielogic.admin_auth import load_admin_auth_config, verify_admin_credentials
 from doobielogic.key_management import KEY_ROLE_ADMIN, KEY_ROLE_SERVICE, KeyStore
 from doobielogic.learning_store_v1 import log_event, summarize_learning
@@ -359,6 +360,20 @@ def compliance_jurisdictions(
         "count": len(records),
         "coverage": "50 states, District of Columbia, and five U.S. territories",
         "actionability_policy": "Registry links are official entry points; exact current rule text must be verified before action.",
+    }
+
+
+@app.get("/api/v1/knowledge/professional-domains")
+def professional_domains(
+    x_api_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
+    domains = professional_domain_catalog()
+    return {
+        "domains": domains,
+        "count": len(domains),
+        "policy": "Each professional domain supplies metrics, evidence requirements, decision rules, and safety boundaries.",
     }
 
 
