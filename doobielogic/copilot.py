@@ -8,6 +8,7 @@ from doobielogic.cannabis_intelligence import build_doobie_context
 from doobielogic.department_knowledge import render_department_knowledge_summary, search_department_knowledge
 from doobielogic.engine import CannabisLogicEngine
 from doobielogic.models import CannabisInput, CannabisOutput
+from doobielogic.module_curriculum import curriculum_brief
 from doobielogic.operations_engine import build_operations_outputs, render_operations_summary
 from doobielogic.parser import analyze_mapped_data, render_insight_summary
 from doobielogic.response_system import RESPONSE_BUILDERS, infer_confidence
@@ -263,6 +264,7 @@ class DoobieCopilot:
         explanation = "\n\n".join(
             [
                 f"Role lens: {PERSONA_GUIDANCE[safe_persona]}",
+                curriculum_brief(context_mode),
                 render_department_knowledge_summary(knowledge),
                 "Grounded source context:\n" + grounded["answer"],
             ]
@@ -329,6 +331,7 @@ class DoobieCopilot:
         explanation = "\n\n".join(
             [
                 f"Role lens: {PERSONA_GUIDANCE.get(safe_persona, PERSONA_GUIDANCE['executive'])}",
+                curriculum_brief(context_mode),
                 outputs["knowledge_summary"],
                 render_operations_summary(outputs, department=dept),
                 "Grounded source context:\n" + grounded["answer"],
@@ -369,6 +372,7 @@ class DoobieCopilot:
 
         answer_sections = [
             f"Role lens: {PERSONA_GUIDANCE[safe_persona]}",
+            curriculum_brief(context_mode),
             "File intelligence:\n" + data_summary,
         ]
 
@@ -418,6 +422,7 @@ class DoobieCopilot:
         )
         explanation = (
             f"Role lens: {PERSONA_GUIDANCE.get(safe_persona, PERSONA_GUIDANCE['buyer'])}\n\n"
+            f"{curriculum_brief('inventory' if safe_persona == 'buyer' else safe_persona)}\n\n"
             f"Score: {analysis.score} ({analysis.tier})\n"
             f"Compliance risk: {analysis.compliance_risk}\n"
             f"Inventory stress: {analysis.inventory_stress}\n"

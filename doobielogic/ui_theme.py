@@ -162,6 +162,169 @@ def apply_buyer_dashboard_theme() -> None:
     )
 
 
+def apply_chat_theme() -> None:
+    """A quiet, chat-first visual system optimized for long cannabis conversations."""
+
+    st.markdown(
+        """
+        <style>
+            :root {
+                --chat-ink: #172019;
+                --chat-muted: #657067;
+                --chat-border: #e4e8e4;
+                --chat-soft: #f5f7f5;
+                --chat-accent: #2d6a4f;
+                --chat-accent-hover: #24573f;
+                --chat-sidebar: #171a18;
+            }
+            .stApp {
+                background: #ffffff;
+                color: var(--chat-ink);
+            }
+            .block-container {
+                max-width: 900px;
+                padding-top: 2rem;
+                padding-bottom: 8rem;
+            }
+            header[data-testid="stHeader"] {
+                background: rgba(255,255,255,.92);
+                border-bottom: 1px solid var(--chat-border);
+            }
+            section[data-testid="stSidebar"] {
+                background: var(--chat-sidebar);
+                border-right: 1px solid #252a27;
+            }
+            section[data-testid="stSidebar"] * {
+                color: #f2f5f2;
+            }
+            section[data-testid="stSidebar"] .stButton > button {
+                width: 100%;
+                justify-content: flex-start;
+                background: transparent;
+                border: 1px solid #343a36;
+                box-shadow: none;
+                color: #f4f7f4;
+            }
+            section[data-testid="stSidebar"] .stButton > button:hover {
+                background: #292e2b;
+                border-color: #4c554f;
+            }
+            section[data-testid="stSidebar"] [data-baseweb="select"] > div,
+            section[data-testid="stSidebar"] [data-testid="stFileUploader"] {
+                background: #232724;
+                border-color: #424944;
+            }
+            .dl-brand {
+                font-size: 1.05rem;
+                padding: .35rem .2rem 1rem;
+                letter-spacing: -.01em;
+            }
+            .dl-welcome {
+                min-height: 42vh;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                text-align: center;
+                padding: 2rem 1rem;
+            }
+            .dl-welcome-mark {
+                width: 54px;
+                height: 54px;
+                display: grid;
+                place-items: center;
+                border-radius: 15px;
+                background: #e8f2ec;
+                font-size: 1.65rem;
+                margin-bottom: 1rem;
+            }
+            .dl-welcome h1 {
+                font-size: clamp(1.75rem, 4vw, 2.35rem);
+                letter-spacing: -.035em;
+                margin: 0;
+            }
+            .dl-welcome p {
+                max-width: 650px;
+                color: var(--chat-muted);
+                font-size: 1rem;
+                line-height: 1.65;
+                margin-top: .8rem;
+            }
+            [data-testid="stChatMessage"] {
+                background: transparent;
+                border-bottom: 1px solid var(--chat-border);
+                padding: 1.2rem .25rem;
+            }
+            [data-testid="stChatMessage"] p,
+            [data-testid="stChatMessage"] li {
+                line-height: 1.7;
+            }
+            [data-testid="stChatInput"] {
+                border-radius: 18px;
+                border: 1px solid #cfd6d0;
+                box-shadow: 0 10px 30px rgba(26, 40, 31, .12);
+                background: #fff;
+            }
+            .stButton > button, .stFormSubmitButton > button {
+                border-radius: 12px;
+                border: 1px solid var(--chat-border);
+                background: #fff;
+                color: var(--chat-ink);
+                box-shadow: none;
+                min-height: 2.8rem;
+            }
+            .stButton > button:hover, .stFormSubmitButton > button:hover {
+                border-color: #b8c4ba;
+                background: var(--chat-soft);
+                color: var(--chat-ink);
+            }
+            .stFormSubmitButton > button[kind="primary"],
+            button[kind="primary"] {
+                background: var(--chat-accent);
+                border-color: var(--chat-accent);
+                color: #fff;
+            }
+            .stFormSubmitButton > button[kind="primary"]:hover,
+            button[kind="primary"]:hover {
+                background: var(--chat-accent-hover);
+                border-color: var(--chat-accent-hover);
+                color: #fff;
+            }
+            .dl-auth-card {
+                border: 1px solid var(--chat-border);
+                border-radius: 18px;
+                padding: 1.25rem 1.35rem;
+                margin-top: 12vh;
+                box-shadow: 0 18px 50px rgba(28, 42, 33, .08);
+                background: #fff;
+            }
+            [data-testid="stExpander"] {
+                border: 1px solid var(--chat-border);
+                border-radius: 12px;
+                background: var(--chat-soft);
+            }
+            [data-testid="stDataFrame"] {
+                border: 1px solid var(--chat-border);
+                border-radius: 12px;
+                overflow: hidden;
+            }
+            @media (max-width: 700px) {
+                .block-container {
+                    padding-top: 1rem;
+                    padding-left: 1rem;
+                    padding-right: 1rem;
+                }
+                .dl-welcome {
+                    min-height: 32vh;
+                    padding-top: 1rem;
+                }
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_page_hero(title: str, subtitle: str) -> None:
     st.markdown(
         f"""

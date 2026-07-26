@@ -9,8 +9,12 @@ from pydantic import BaseModel, Field
 
 from doobielogic.copilot import DoobieCopilot
 from doobielogic.config import load_doobie_config
+from doobielogic.conversational_ai import ConversationService
 from doobielogic.evals import apply_low_confidence_fallback
 from doobielogic.intelligence_v3 import build_intel_v3
+from doobielogic.intelligence_router import infer_intelligence_route
+from doobielogic.jurisdictions import JURISDICTION_NAMES, get_jurisdiction_context
+from doobielogic.module_curriculum import MODULE_CURRICULA
 from doobielogic.admin_auth import load_admin_auth_config, verify_admin_credentials
 from doobielogic.key_management import KEY_ROLE_ADMIN, KEY_ROLE_SERVICE, KeyStore
 from doobielogic.learning_store_v1 import log_event, summarize_learning
@@ -25,6 +29,7 @@ LICENSE_STORE = LicenseStore(path=CONFIG.license_store_path, database_url=CONFIG
 KEY_STORE = KeyStore(path=CONFIG.key_store_path, database_url=CONFIG.database_url)
 KEY_VALIDATION_TOKEN = CONFIG.key_validation_token
 COPILOT = DoobieCopilot()
+CONVERSATION = ConversationService()
 
 
 class BuyerReq(BaseModel):
@@ -54,6 +59,7 @@ class SupportReq(BaseModel):
     mode: str | None = None
     department: str | None = None
     persona: str | None = None
+    history: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class LicenseValidateReq(BaseModel):
@@ -225,7 +231,14 @@ def admin_auth(authorization: str | None) -> None:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-def _support_response(resp, mode: str) -> dict[str, Any]:
+def _support_response(
+    resp,
+    mode: str,
+    *,
+    state: str | None = None,
+    routed_by: str | None = None,
+    request: SupportReq | None = None,
+) -> dict[str, Any]:
     standard = {
         "answer": resp.answer,
         "explanation": resp.explanation,
@@ -235,8 +248,28 @@ def _support_response(resp, mode: str) -> dict[str, Any]:
         "mode": mode,
         "risk_flags": resp.risk_flags,
         "inefficiencies": resp.inefficiencies,
+        "routed_mode": mode,
+        "routed_by": routed_by or "Requested by client",
     }
-    return apply_low_confidence_fallback(standard)
+    if mode == "compliance":
+        context = get_jurisdiction_context(state)
+        standard["compliance_context"] = context.to_dict() if context else {
+            "code": None,
+            "confidence": "low",
+            "review_status": "A jurisdiction is required for grounded compliance guidance.",
+        }
+    standard = apply_low_confidence_fallback(standard)
+    if request is None:
+        standard["ai"] = CONVERSATION.status.to_dict()
+        return standard
+    return CONVERSATION.enhance(
+        standard,
+        question=_support_question(request, "What cannabis-business action should I take next?"),
+        mode=mode,
+        state=request.state,
+        data=request.data,
+        history=request.history,
+    )
 
 
 def _support_question(req: SupportReq, default: str) -> str:
@@ -261,6 +294,10 @@ def health() -> dict[str, str]:
     return {
         "status": "ok",
         "service": "DoobieLogic API v4",
+        "ai_provider": CONVERSATION.status.provider,
+        "ai_model": str(CONVERSATION.status.model or ""),
+        "ai_enabled": "true" if CONVERSATION.status.enabled else "false",
+        "ai_fallback_reason": str(CONVERSATION.status.fallback_reason or ""),
         "license_validation_route": "/api/v1/license/validate",
         "backend_mode": str(diagnostics["backend_mode"]),
         "backend_mode_source": str(diagnostics["backend_mode_source"]),
@@ -284,6 +321,38 @@ def auth_check(
 ) -> dict[str, Any]:
     require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
     return {"authenticated": True, "service": "DoobieLogic", "api_version": "v4"}
+
+
+@app.get("/api/v1/knowledge/modules")
+def knowledge_modules(
+    x_api_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
+    return {
+        "modules": {name: curriculum.to_dict() for name, curriculum in MODULE_CURRICULA.items()},
+        "count": len(MODULE_CURRICULA),
+        "policy": "Each routed module applies its own topics, metrics, decision rules, evidence requirements, and safe-failure behavior.",
+    }
+
+
+@app.get("/api/v1/compliance/jurisdictions")
+def compliance_jurisdictions(
+    x_api_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
+    records = [
+        context.to_dict()
+        for code in JURISDICTION_NAMES
+        if (context := get_jurisdiction_context(code)) is not None
+    ]
+    return {
+        "jurisdictions": records,
+        "count": len(records),
+        "coverage": "50 states, District of Columbia, and five U.S. territories",
+        "actionability_policy": "Registry links are official entry points; exact current rule text must be verified before action.",
+    }
 
 
 @app.post("/buyer/intelligence")
@@ -316,7 +385,7 @@ def support_buyer_brief(req: SupportReq, x_api_key: str | None = Header(default=
     require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
     question = _support_question(req, "What should the buyer prioritize from this dataset?")
     resp = COPILOT.ask_with_buyer_brain(question, mapped_data=req.data, persona="buyer", state=req.state)
-    return _support_response(resp, mode="buyer")
+    return _support_response(resp, mode="buyer", state=req.state, request=req)
 
 
 @app.post("/api/v1/support/inventory-check", include_in_schema=False)
@@ -325,7 +394,7 @@ def support_inventory_check(req: SupportReq, x_api_key: str | None = Header(defa
     require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
     question = _support_question(req, "Which inventory risks need immediate attention?")
     resp = COPILOT.ask_with_buyer_brain(question, mapped_data=req.data, persona="buyer", state=req.state)
-    return _support_response(resp, mode="inventory")
+    return _support_response(resp, mode="inventory", state=req.state, request=req)
 
 
 @app.post("/api/v1/support/extraction-brief", include_in_schema=False)
@@ -334,7 +403,7 @@ def support_extraction_brief(req: SupportReq, x_api_key: str | None = Header(def
     require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
     question = _support_question(req, "Which extraction risks and process opportunities matter most?")
     resp = COPILOT.ask_with_operations(question, department="extraction", parsed_data=req.data, persona="extraction", state=req.state)
-    return _support_response(resp, mode="extraction")
+    return _support_response(resp, mode="extraction", state=req.state, request=req)
 
 
 @app.post("/api/v1/support/ops-brief", include_in_schema=False)
@@ -344,14 +413,14 @@ def support_ops_brief(req: SupportReq, x_api_key: str | None = Header(default=No
     department = (req.department or "operations").lower()
     question = _support_question(req, "Which operational bottlenecks should we address first?")
     resp = COPILOT.ask_with_operations(question, department=department, parsed_data=req.data, persona="ops", state=req.state)
-    return _support_response(resp, mode="ops")
+    return _support_response(resp, mode="ops", state=req.state, request=req)
 
 
 @app.post("/api/v1/support/copilot")
 def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None), authorization: str | None = Header(default=None)) -> dict[str, Any]:
     require_service_auth(x_api_key=x_api_key, authorization=authorization, required_scope="buyer_dashboard")
     question = _support_question(req, "What is the most useful cannabis operations action to take next?")
-    requested_mode = (req.mode or req.persona or "copilot").strip().lower()
+    requested_mode = (req.mode or req.persona or "auto").strip().lower()
     mode_aliases = {
         "buyer_assistant": "buyer",
         "support": "copilot",
@@ -359,17 +428,22 @@ def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None
         "operations": "ops",
     }
     mode = mode_aliases.get(requested_mode, requested_mode)
+    routed_by = "Requested by client"
+    if mode in {"", "auto", "automatic"}:
+        route = infer_intelligence_route(question, data=req.data)
+        mode = route.mode
+        routed_by = route.reason
 
     if mode in {"buyer", "inventory"}:
         resp = COPILOT.ask_with_buyer_brain(question, mapped_data=req.data, persona="buyer", state=req.state)
-        return _support_response(resp, mode=mode)
+        return _support_response(resp, mode=mode, state=req.state, routed_by=routed_by, request=req)
     if mode == "extraction":
         resp = COPILOT.ask_with_operations(question, department="extraction", parsed_data=req.data, persona="extraction", state=req.state)
-        return _support_response(resp, mode="extraction")
+        return _support_response(resp, mode="extraction", state=req.state, routed_by=routed_by, request=req)
     if mode in {"ops", "operations"}:
         dept = (req.department or "operations").lower()
         resp = COPILOT.ask_with_operations(question, department=dept, parsed_data=req.data, persona="ops", state=req.state)
-        return _support_response(resp, mode="ops")
+        return _support_response(resp, mode="ops", state=req.state, routed_by=routed_by, request=req)
     if mode in {"retail_ops", "cultivation", "kitchen", "packaging"}:
         resp = COPILOT.ask_with_operations(
             question,
@@ -378,7 +452,7 @@ def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None
             persona=mode,  # type: ignore[arg-type]
             state=req.state,
         )
-        return _support_response(resp, mode=mode)
+        return _support_response(resp, mode=mode, state=req.state, routed_by=routed_by, request=req)
     if mode == "compliance":
         resp = COPILOT.ask_with_operations(
             question,
@@ -387,13 +461,13 @@ def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None
             persona="compliance",
             state=req.state,
         )
-        return _support_response(resp, mode="compliance")
+        return _support_response(resp, mode="compliance", state=req.state, routed_by=routed_by, request=req)
     if mode == "executive":
         resp = COPILOT.ask(question, persona="executive", state=req.state)
-        return _support_response(resp, mode="executive")
+        return _support_response(resp, mode="executive", state=req.state, routed_by=routed_by, request=req)
 
     resp = COPILOT.ask(question, persona="copilot", state=req.state)
-    return _support_response(resp, mode="copilot")
+    return _support_response(resp, mode="copilot", state=req.state, routed_by=routed_by, request=req)
 
 
 @app.post("/api/v1/license/validate")

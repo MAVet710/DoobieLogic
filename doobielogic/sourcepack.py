@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from doobielogic.jurisdictions import compliance_context_text, get_jurisdiction_context
+
 TrustLevel = Literal["high", "medium"]
 EntryType = Literal["regulator", "operations", "science", "retail", "safety", "tracking"]
 
@@ -66,7 +68,19 @@ def match_sources(question: str, state: str | None = None, module: str | None = 
 
 def build_grounded_summary(question: str, state: str | None = None, module: str | None = None, limit: int = 6) -> dict:
     matches = match_sources(question=question, state=state, module=module, limit=limit)
+    jurisdiction = get_jurisdiction_context(state) if module == "compliance" else None
+    jurisdiction_sources = [source.url for source in jurisdiction.sources] if jurisdiction else []
+    jurisdiction_answer = compliance_context_text(state) if module == "compliance" else ""
     if not matches:
+        if jurisdiction:
+            return {
+                "answer": jurisdiction_answer,
+                "sources": jurisdiction_sources,
+                "confidence": jurisdiction.confidence,
+                "grounding": "Official jurisdiction source registry",
+                "compliance_context": jurisdiction.to_dict(),
+                "matches": [],
+            }
         return {
             "answer": "I do not have a direct curated source match for that yet. Use the existing analytics tools or add a source-backed entry before treating this as authoritative.",
             "sources": [],
@@ -78,10 +92,14 @@ def build_grounded_summary(question: str, state: str | None = None, module: str 
     lines = [f"- {entry.title}: {entry.summary}" for entry in top]
     confidence = "high" if any(entry.trust_level == "high" for entry in top) else "medium"
     grounding = "Curated static source pack"
+    answer_parts = ["\n".join(lines)]
+    if jurisdiction_answer:
+        answer_parts.append(jurisdiction_answer)
     return {
-        "answer": "\n".join(lines),
-        "sources": [entry.source_url for entry in matches],
+        "answer": "\n\n".join(answer_parts),
+        "sources": list(dict.fromkeys([entry.source_url for entry in matches] + jurisdiction_sources)),
         "confidence": confidence,
-        "grounding": grounding,
+        "grounding": "Curated source pack plus official jurisdiction registry" if jurisdiction else grounding,
         "matches": [entry.__dict__ for entry in matches],
+        "compliance_context": jurisdiction.to_dict() if jurisdiction else None,
     }

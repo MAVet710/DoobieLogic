@@ -38,7 +38,16 @@ def test_backend_mode_accepts_postgres_alias():
     cfg = load_doobie_config(
         env={
             "DOOBIE_BACKEND_MODE": "postgres",
-            "DOOBIE_ADMIN_API_BASE_URL": "https://admin.example.com",
+            "DOOBIE_DATABASE_URL": "postgresql://db.example.com/doobie",
         }
     )
-    assert cfg.backend_mode == "remote_api"
+    assert cfg.backend_mode == "postgres"
+
+
+def test_postgres_mode_requires_database_url_not_remote_admin_url():
+    try:
+        load_doobie_config(env={"DOOBIE_BACKEND_MODE": "postgres"})
+    except ValueError as exc:
+        assert "DOOBIE_DATABASE_URL" in str(exc)
+    else:
+        raise AssertionError("Expected postgres mode without a database URL to fail")
