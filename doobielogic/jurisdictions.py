@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import re
 from typing import Literal
 
 from doobielogic.regulations import REGULATION_LINKS
@@ -73,6 +74,12 @@ JURISDICTION_NAMES = {
     "MP": "Northern Mariana Islands",
     "PR": "Puerto Rico",
     "VI": "U.S. Virgin Islands",
+}
+
+_JURISDICTION_ALIASES = {
+    "DC": ("Washington, D.C.", "Washington DC", "District of Columbia"),
+    "MP": ("Commonwealth of the Northern Mariana Islands", "Northern Mariana Islands", "CNMI"),
+    "VI": ("United States Virgin Islands", "U.S. Virgin Islands", "US Virgin Islands"),
 }
 
 _ADULT_AND_MEDICAL = {
@@ -218,6 +225,57 @@ def get_jurisdiction_context(code: str | None) -> JurisdictionContext | None:
             "local ordinances, and license conditions with the regulator or qualified counsel before action."
         ),
     )
+
+
+def infer_jurisdiction_code(text: str | None) -> str | None:
+    """Infer an explicitly named U.S. state or territory without guessing location."""
+
+    original = str(text or "").strip()
+    if not original:
+        return None
+    for code, name in sorted(JURISDICTION_NAMES.items(), key=lambda item: len(item[1]), reverse=True):
+        aliases = (name, *_JURISDICTION_ALIASES.get(code, ()))
+        if any(re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", original, re.IGNORECASE) for alias in aliases):
+            return code
+    # Accept postal codes only when typed in uppercase. This avoids treating ordinary
+    # words such as "or", "in", and "me" as jurisdictions.
+    for code in JURISDICTION_NAMES:
+        if re.search(rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", original):
+            return code
+    return None
+
+
+def compliance_clarification_result(route_label: str = "Compliance") -> dict:
+    """Return a natural clarification instead of a generic low-confidence failure."""
+
+    return {
+        "answer": (
+            "Which state or U.S. territory are you asking about? "
+            "Adult-use purchase limits vary by jurisdiction, so I need the location to give you the current limit."
+        ),
+        "explanation": (
+            "Cannabis purchase and possession limits are set by each jurisdiction and can also differ "
+            "between adult-use and medical programs."
+        ),
+        "recommendations": [
+            "Reply with the state or territory—for example, “Massachusetts” or “MA”.",
+        ],
+        "confidence": "low",
+        "sources": [],
+        "mode": "compliance",
+        "risk_flags": ["Jurisdiction is required for a current legal-limit answer."],
+        "inefficiencies": [],
+        "routed_mode": "compliance",
+        "route_label": route_label,
+        "routed_by": "Detected a jurisdiction-specific compliance question",
+        "needs_clarification": True,
+        "missing_context": ["jurisdiction"],
+        "compliance_context": {
+            "code": None,
+            "confidence": "low",
+            "review_status": "A jurisdiction is required for grounded compliance guidance.",
+        },
+    }
 
 
 def compliance_context_text(code: str | None) -> str:
