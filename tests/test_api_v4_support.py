@@ -65,6 +65,16 @@ def test_module_curriculum_and_jurisdiction_registry_endpoints(monkeypatch):
     assert all(record["actionable"] is False for record in jurisdictions.json()["jurisdictions"])
 
 
+def test_professional_domain_catalog_endpoint(monkeypatch):
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
+    res = client.get("/api/v1/knowledge/professional-domains")
+
+    assert res.status_code == 200
+    assert res.json()["count"] == 10
+    assert res.json()["domains"]["quality"]["required_evidence"]
+    assert res.json()["domains"]["security"]["safety_boundary"]
+
+
 def test_copilot_auto_routes_and_accepts_conversation_history(monkeypatch):
     monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
     res = client.post(
@@ -142,6 +152,19 @@ def test_common_operational_question_returns_actionable_playbook(monkeypatch):
     assert payload["routed_mode"] == "kitchen"
     assert "Quarantine the batch" in payload["answer"]
     assert len(payload["recommendations"]) >= 3
+
+
+def test_laboratory_oos_question_returns_safe_actionable_playbook(monkeypatch):
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
+    res = client.post(
+        "/api/v1/support/copilot",
+        json={"question": "The lab reported an OOS result. Can we retest until it passes?"},
+    )
+    payload = res.json()
+    assert res.status_code == 200
+    assert payload["routed_mode"] == "laboratory"
+    assert "Preserve raw data" in payload["answer"]
+    assert any("Do not average away" in risk for risk in payload["risk_flags"])
 
 
 def test_unverified_compliance_question_fails_usefully_with_official_sources(monkeypatch):
