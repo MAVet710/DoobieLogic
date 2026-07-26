@@ -6,6 +6,8 @@ from pathlib import Path
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from doobielogic.module_curriculum import get_module_curriculum
+
 INTEL_DIR = Path(__file__).resolve().parent.parent / "intel"
 INTEL_FILES = {
     "extraction": "extraction_intel.json",
@@ -345,6 +347,7 @@ def build_doobie_context(data: dict[str, Any] | None, mode: str, question: str |
 
     context = {
         "mode": safe_mode,
+        "module_curriculum": get_module_curriculum(safe_mode).to_dict(),
         "inventory_summary": inventory_summary,
         "extraction_summary": extraction_summary,
         "relevant_rules": _collect_relevant_rules(safe_mode, modules),
@@ -369,6 +372,7 @@ def build_ai_input(question: str, data: dict[str, Any] | None, mode: str, state:
             "risk_flags": context["risk_flags"],
             "selected_intelligence": context["selected_intelligence"],
             "state_overlay": context["state_overlay"],
+            "module_curriculum": context["module_curriculum"],
         },
         "intel_modules": context["intel_modules"],
     }

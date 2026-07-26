@@ -25,7 +25,20 @@ def test_support_response_format(monkeypatch):
     res = client.post('/api/v1/support/buyer_brief', json={'question': 'help', 'data': {'days_on_hand': 10}})
     assert res.status_code == 200
     payload = res.json()
-    assert set(payload.keys()) == {'answer', 'explanation', 'recommendations', 'confidence', 'sources', 'mode', 'risk_flags', 'inefficiencies'}
+    assert {
+        "answer",
+        "explanation",
+        "recommendations",
+        "confidence",
+        "sources",
+        "mode",
+        "risk_flags",
+        "inefficiencies",
+        "routed_mode",
+        "routed_by",
+        "ai",
+    } <= set(payload)
+    assert payload["ai"]["provider"] in {"rules", "openai"}
 
 
 def test_auth_check_uses_v4_service_auth(monkeypatch):
@@ -37,6 +50,35 @@ def test_auth_check_uses_v4_service_auth(monkeypatch):
         "service": "DoobieLogic",
         "api_version": "v4",
     }
+
+
+def test_module_curriculum_and_jurisdiction_registry_endpoints(monkeypatch):
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
+    modules = client.get("/api/v1/knowledge/modules")
+    jurisdictions = client.get("/api/v1/compliance/jurisdictions")
+
+    assert modules.status_code == 200
+    assert "cultivation" in modules.json()["modules"]
+    assert modules.json()["modules"]["compliance"]["required_evidence"]
+    assert jurisdictions.status_code == 200
+    assert jurisdictions.json()["count"] == 56
+    assert all(record["actionable"] is False for record in jurisdictions.json()["jurisdictions"])
+
+
+def test_copilot_auto_routes_and_accepts_conversation_history(monkeypatch):
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
+    res = client.post(
+        "/api/v1/support/copilot",
+        json={
+            "question": "How should I review cultivation yield by room?",
+            "state": "CA",
+            "data": {"room": ["A"]},
+            "history": [{"role": "user", "content": "We are reviewing last harvest."}],
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["routed_mode"] == "cultivation"
+    assert res.json()["routed_by"] == "Detected from your question"
 
 
 def test_legacy_hyphenated_support_route_remains_compatible(monkeypatch):

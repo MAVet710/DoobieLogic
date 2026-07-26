@@ -5,7 +5,7 @@ DoobieLogic now uses a shared Postgres schema as the source of truth for long-li
 ## Required env vars
 
 - Postgres URL (first non-empty wins): `DOOBIE_DATABASE_URL`, then `DATABASE_URL`, then `POSTGRES_URL`.
-- `DOOBIE_BACKEND_MODE`: `auto`, `local`, or `remote_api`.
+- `DOOBIE_BACKEND_MODE`: `auto`, `local`, `postgres`, or `remote_api`.
 - `DOOBIE_ADMIN_API_BASE_URL` + `ADMIN_API_KEY` for split Streamlit/FastAPI deployments.
 
 ## Schema
@@ -16,6 +16,8 @@ Schema initialization is automatic on startup of `LicenseStore`/`KeyStore` with 
 - `licenses`
 - `api_keys`
 - `audit_events`
+- `app_roles`
+- `app_users`
 
 `pgcrypto` is enabled for UUID generation (`gen_random_uuid()`), `updated_at` triggers are installed for mutable tables, and indexes are added for common admin query patterns.
 
@@ -43,7 +45,8 @@ Use persistent Postgres-backed storage in production.
 
 Required:
 - `DATABASE_URL` (or `DOOBIE_DATABASE_URL` / `POSTGRES_URL`) pointing to your managed Postgres instance.
-- `DOOBIE_BACKEND_MODE=postgres` (alias of remote mode for production clarity).
+- `DOOBIE_BACKEND_MODE=postgres` (direct shared-Postgres mode).
+- `DOOBIE_STRICT_CONFIG=true`.
 - `ADMIN_API_KEY` (or complete the bootstrap admin key flow after deploy).
 
 Behavior:

@@ -45,8 +45,10 @@ def _resolve_backend_mode(preferred_mode: str, base_url: str) -> tuple[str, str]
     normalized_mode = preferred_mode.strip().lower()
     if normalized_mode in {"", "auto"}:
         return ("remote_api", "auto") if base_url else ("local", "auto")
-    if normalized_mode in {"remote", "remote_api", "postgres"}:
+    if normalized_mode in {"remote", "remote_api"}:
         return "remote_api", "explicit"
+    if normalized_mode == "postgres":
+        return "postgres", "explicit"
     if normalized_mode == "local":
         return "local", "explicit"
     raise ValueError(
@@ -181,8 +183,8 @@ def load_doobie_config(env: Mapping[str, str] | None = None) -> DoobieConfig:
 
     if production_like_env and strict_config and resolved_mode == "local" and not base_url:
         raise ValueError(
-            "Production-like strict config error: local backend mode would drift from remote admin storage. "
-            "Set DOOBIE_BACKEND_MODE=remote_api and DOOBIE_ADMIN_API_BASE_URL."
+            "Production-like strict config error: local backend mode would use ephemeral storage. "
+            "Set DOOBIE_BACKEND_MODE=postgres with DOOBIE_DATABASE_URL, or configure remote_api."
         )
 
     database_url = (
@@ -198,6 +200,12 @@ def load_doobie_config(env: Mapping[str, str] | None = None) -> DoobieConfig:
         database_url_source = "DATABASE_URL"
     elif (source.get("POSTGRES_URL") or "").strip():
         database_url_source = "POSTGRES_URL"
+
+    if resolved_mode == "postgres" and not database_url:
+        raise ValueError(
+            "DOOBIE_BACKEND_MODE=postgres requires DOOBIE_DATABASE_URL "
+            "(or DATABASE_URL/POSTGRES_URL fallback)."
+        )
 
     if production_like_env and not database_url:
         import logging

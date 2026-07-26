@@ -1,15 +1,24 @@
 # DoobieLogic
 
-DoobieLogic is a cannabis-native copilot and API layer for buyers, operators, compliance teams, and extraction teams. It combines deterministic KPI logic, CSV intelligence, and curated source grounding so teams can move faster without pretending heuristics are law.
+DoobieLogic is a chat-first cannabis AI and API layer for buyers, retailers,
+cultivators, processors, manufacturers, packaging teams, compliance teams, and
+executives. It combines a conversational model with deterministic KPI logic,
+module-specific cannabis curricula, CSV intelligence, and official-source
+compliance grounding.
 
 ## What DoobieLogic includes
 
 - **Streamlit copilot UI** (`streamlit_app.py`) with:
-  - role selector
-  - state selector
-  - chat history
+  - ChatGPT-style chat with automatic specialist routing
+  - state and territory selector for legally material questions
+  - multi-turn conversation history
   - CSV upload + file intelligence
-  - buyer-brain quick actions
+  - in-app users, passwords, custom roles, and permissions
+- **Cannabis module curricula** (`doobielogic/module_curriculum.py`) for
+  buying, inventory, dispensary operations, cultivation, extraction, kitchen
+  manufacturing, packaging, compliance, operations, and executive decisions
+- **Optional conversational AI** (`doobielogic/conversational_ai.py`) through
+  the OpenAI Responses API, with a deterministic rules-engine fallback
 - **Copilot orchestration** (`doobielogic/copilot.py`)
 - **Curated source grounding** (`doobielogic/sourcepack.py`)
 - **CSV parsing + mapping** (`doobielogic/parser.py`)
@@ -58,10 +67,20 @@ pip install -e .
 streamlit run streamlit_app.py
 ```
 
-The standalone copilot is open by default for local use. To require a login,
-set `DOOBIE_REQUIRE_LOGIN=true`, `DOOBIE_ADMIN_PASSWORD_HASH`, and optionally
-`DOOBIE_ADMIN_USERNAME`. Never store plaintext or shared credentials in the
-repository.
+The standalone copilot is open by default for local development. For a shared
+deployment, set `DOOBIE_REQUIRE_LOGIN=true` and a one-time
+`DOOBIE_BOOTSTRAP_TOKEN`. The first-run screen creates the owner account. After
+that, administrators create users, reset passwords, activate/deactivate
+accounts, and define roles inside the app. Passwords are bcrypt hashes.
+
+For natural multi-turn model answers, configure:
+
+- `DOOBIE_AI_PROVIDER=openai`
+- `OPENAI_API_KEY=<secret>`
+- `DOOBIE_OPENAI_MODEL=gpt-5.6`
+
+Without a model key, DoobieLogic remains operational using deterministic
+analytics and source grounding and reports the fallback in answer details.
 
 ## API run
 
@@ -85,6 +104,8 @@ DoobieLogic acts as a **support service** for Buyer Dashboard. Buyer Dashboard r
 ### New support endpoints
 
 - `GET /api/v1/auth/check`
+- `GET /api/v1/knowledge/modules`
+- `GET /api/v1/compliance/jurisdictions`
 - `POST /api/v1/support/buyer_brief`
 - `POST /api/v1/support/inventory_check`
 - `POST /api/v1/support/extraction_brief`
@@ -104,7 +125,15 @@ All support endpoints return this standardized internal contract:
   "sources": ["string"],
   "mode": "buyer|inventory|extraction|ops|copilot|compliance|executive",
   "risk_flags": ["string"],
-  "inefficiencies": ["string"]
+  "inefficiencies": ["string"],
+  "routed_mode": "string",
+  "routed_by": "string",
+  "ai": {
+    "provider": "openai|rules",
+    "model": "string|null",
+    "enabled": true,
+    "fallback_reason": "string|null"
+  }
 }
 ```
 
@@ -121,6 +150,18 @@ DoobieLogic applies a mode-specific response style through `doobielogic/response
 - **executive**: concise summary, cross-functional issues, decision-ready next actions.
 
 Confidence is inferred from structured data coverage, source grounding, and relevant operational/compliance rules—not hardcoded.
+
+### Compliance coverage and evidence policy
+
+Compliance coverage includes all 50 states, the District of Columbia, American
+Samoa, Guam, the Northern Mariana Islands, Puerto Rico, and the U.S. Virgin
+Islands. The registry exposes official authority and law/rule entry points,
+program scope, source-review date, confidence, and review status.
+
+Registry links are not treated as exact current rule text. When an exact rule is
+not present in the curated corpus, DoobieLogic states the limitation, provides
+the official authority link, and requires regulator or qualified-counsel
+verification before action.
 
 ### Example request
 
@@ -178,6 +219,8 @@ See full documentation in `docs/licensing.md`.
   - `DOOBIE_API_KEY` (service authentication key)
   - `DATABASE_URL` (or `DOOBIE_DATABASE_URL` / `POSTGRES_URL`) for persistent shared Postgres storage
   - `DOOBIE_BACKEND_MODE=postgres` (recommended for production clarity; local mode is dev-only)
+  - `DOOBIE_STRICT_CONFIG=true`
+  - `DOOBIE_AI_PROVIDER=openai` and `OPENAI_API_KEY` for conversational answers
 - Optional admin key:
   - `ADMIN_API_KEY` (for admin endpoints only)
 - Health probe:

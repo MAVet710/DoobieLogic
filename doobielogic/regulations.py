@@ -1,7 +1,7 @@
 REGULATION_LINKS = {
     "AL": {
         "program": "https://amcc.alabama.gov/",
-        "statutes": "https://codes.findlaw.com/al/title-20-food-drugs-and-cosmetics/al-code-sect-20-2a-1/",
+        "statutes": "https://alison.legislature.state.al.us/code-of-alabama?section=20-2A-2",
     },
     "AK": {"program": "https://www.commerce.alaska.gov/web/amco", "statutes": "https://www.akleg.gov/"},
     "AZ": {"program": "https://www.azdhs.gov/licensing/medical-marijuana/", "statutes": "https://www.azleg.gov/"},
@@ -53,4 +53,9 @@ REGULATION_LINKS = {
     "WI": {"program": "https://docs.legis.wisconsin.gov/", "statutes": "https://docs.legis.wisconsin.gov/"},
     "WY": {"program": "https://wyoleg.gov/", "statutes": "https://wyoleg.gov/"},
     "DC": {"program": "https://abca.dc.gov/page/medical-cannabis-program", "statutes": "https://code.dccouncil.gov/"},
+    "AS": {"program": "https://www.americansamoa.gov/", "statutes": "https://asbar.org/"},
+    "GU": {"program": "https://notices.guam.gov/notices/?division_id=282", "statutes": "https://guamcourts.org/CompilerofLaws/GCA/"},
+    "MP": {"program": "https://cnmileg.net/resources/files/2022%20CENTRIC%20REPORT/Cannabis%20CCR%202022.pdf", "statutes": "https://cnmileg.net/"},
+    "PR": {"program": "https://www.salud.pr.gov/CMS/364", "statutes": "https://bvirtualogp.pr.gov/ogp/Bvirtual/leyesreferencia/PDF/42-2017.pdf"},
+    "VI": {"program": "https://ocr.vi.gov/", "statutes": "https://ocr.vi.gov/wp-content/uploads/2024/05/Approved-Rules-and-Regs-2024.pdf"},
 }
