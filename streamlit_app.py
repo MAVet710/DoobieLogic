@@ -11,10 +11,15 @@ import streamlit as st
 from doobielogic.admin_auth import AdminAuthConfig, load_admin_auth_config
 from doobielogic.buyer_brain import summarize_buyer_opportunities
 from doobielogic.config import load_doobie_config
+from doobielogic.compliance_answers import answer_verified_compliance_question
 from doobielogic.conversational_ai import ConversationService
 from doobielogic.copilot import DoobieCopilot
 from doobielogic.intelligence_router import IntelligenceRoute, infer_intelligence_route
-from doobielogic.jurisdictions import JURISDICTION_NAMES, get_jurisdiction_context
+from doobielogic.jurisdictions import (
+    compliance_clarification_result,
+    get_jurisdiction_context,
+    infer_jurisdiction_code,
+)
 from doobielogic.parser import analyze_mapped_data, basic_cannabis_mapping, load_csv_bytes
 from doobielogic.ui_theme import apply_chat_theme
 from doobielogic.user_management import (
@@ -74,7 +79,7 @@ def _initialize_session_state() -> None:
         "buyer_brain": {},
         "uploaded_file_name": "",
         "uploaded_file_token": "",
-        "state": "MA",
+        "jurisdiction": None,
         "workspace": "chat",
         "auth_user_id": None,
         "auth_username": None,
@@ -277,18 +282,6 @@ def _render_sidebar(store: UserStore, permissions: set[str]) -> None:
         st.session_state.workspace = "admin"
         st.rerun()
 
-    st.sidebar.markdown("---")
-    state_codes = list(JURISDICTION_NAMES)
-    if st.session_state.state not in state_codes:
-        st.session_state.state = "MA"
-    st.session_state.state = st.sidebar.selectbox(
-        "State or territory",
-        state_codes,
-        index=state_codes.index(st.session_state.state),
-        format_func=lambda code: f"{JURISDICTION_NAMES[code]} ({code})",
-        help="Location is used automatically whenever a question has legal or compliance implications.",
-    )
-
     if "upload_data" in permissions:
         uploaded = st.sidebar.file_uploader(
             "Add business data",
@@ -304,8 +297,7 @@ def _render_sidebar(store: UserStore, permissions: set[str]) -> None:
 
     st.sidebar.markdown("---")
     identity = st.session_state.get("auth_display_name") or "Guest"
-    role = str(st.session_state.get("auth_user_role") or "analyst").replace("_", " ").title()
-    st.sidebar.caption(f"{identity} · {role}")
+    st.sidebar.caption(identity)
     if st.session_state.authenticated and st.sidebar.button("Log out", use_container_width=True):
         _clear_user_session()
         st.rerun()
@@ -318,10 +310,32 @@ def _run_copilot(
 ) -> dict[str, Any]:
     copilot = get_copilot()
     data = st.session_state.mapped_data or {}
-    state = st.session_state.state
+    resolved_prompt = prompt
+    if route.reason == "Continued the prior compliance question":
+        for message in reversed(history or []):
+            if message.get("role") == "user" and str(message.get("content") or "").strip():
+                resolved_prompt = f"{message['content']}\nJurisdiction: {prompt}"
+                break
+    inferred_state = infer_jurisdiction_code(prompt)
+    if inferred_state:
+        st.session_state.jurisdiction = inferred_state
+    state = st.session_state.jurisdiction
+    if route.mode == "compliance" and not state:
+        return compliance_clarification_result(route.label)
+    if route.mode == "compliance":
+        verified = answer_verified_compliance_question(resolved_prompt, state)
+        if verified:
+            return get_conversation_service().enhance(
+                verified,
+                question=resolved_prompt,
+                mode=route.mode,
+                state=state,
+                data=data,
+                history=history,
+            )
     if route.mode == "buyer":
         response = copilot.ask_with_buyer_brain(
-            prompt,
+            resolved_prompt,
             mapped_data=data,
             persona="buyer",
             state=state,
@@ -337,14 +351,14 @@ def _run_copilot(
     }:
         department = "operations" if route.mode == "ops" else route.mode
         response = copilot.ask_with_operations(
-            prompt,
+            resolved_prompt,
             department=department,
             parsed_data=data,
             persona=route.mode,
             state=state,
         )
     else:
-        response = copilot.ask(prompt, persona=route.mode, state=state)
+        response = copilot.ask(resolved_prompt, persona=route.mode, state=state)
 
     result = asdict(response)
     result["routed_mode"] = route.mode
@@ -355,7 +369,7 @@ def _run_copilot(
         result["compliance_context"] = context.to_dict() if context else None
     return get_conversation_service().enhance(
         result,
-        question=prompt,
+        question=resolved_prompt,
         mode=route.mode,
         state=state,
         data=data,
@@ -453,6 +467,13 @@ def _render_chat(store: UserStore) -> None:
         data=st.session_state.mapped_data,
         user_role=st.session_state.get("auth_user_role"),
     )
+    if (
+        route.mode != "compliance"
+        and len(st.session_state.chat_history) >= 2
+        and (st.session_state.chat_history[-2].get("result") or {}).get("needs_clarification")
+        and infer_jurisdiction_code(final_prompt)
+    ):
+        route = IntelligenceRoute("compliance", "Compliance", "Continued the prior compliance question")
     with st.spinner(f"Working across {route.label.lower()} knowledge..."):
         try:
             result = _run_copilot(
