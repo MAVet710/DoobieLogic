@@ -30,3 +30,15 @@ def test_generic_substrings_do_not_trigger_legal_route():
 def test_uploaded_columns_route_when_question_is_ambiguous():
     route = infer_intelligence_route("Review this", data={"input_weight": [100], "output_weight": [8]})
     assert route.mode == "extraction"
+
+
+def test_routes_common_professional_phrasing_to_the_right_specialist():
+    examples = {
+        "A vendor will discount a double order. Is it a good deal?": "buyer",
+        "Our hydrocarbon run yield fell from 14% to 10%.": "extraction",
+        "We keep mislabeling lots.": "packaging",
+        "What records must a New York dispensary retain for inventory adjustments?": "compliance",
+        "Give me a weekly operating review agenda.": "executive",
+    }
+    for question, expected in examples.items():
+        assert infer_intelligence_route(question).mode == expected
