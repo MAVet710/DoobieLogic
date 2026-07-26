@@ -3,6 +3,7 @@ from doobielogic.jurisdictions import (
     PROGRAM_SCOPES,
     compliance_context_text,
     get_jurisdiction_context,
+    infer_jurisdiction_code,
     legal_jurisdiction_codes,
 )
 
@@ -42,3 +43,9 @@ def test_legal_registry_includes_operating_territories_but_not_american_samoa():
     assert {"GU", "MP", "PR", "VI"} <= legal
     assert "AS" not in legal
 
+
+def test_jurisdiction_is_inferred_only_when_user_names_it():
+    assert infer_jurisdiction_code("What is the adult-use daily purchase limit in Massachusetts?") == "MA"
+    assert infer_jurisdiction_code("What is the current rule in CA?") == "CA"
+    assert infer_jurisdiction_code("What is the rule in Washington, D.C.?") == "DC"
+    assert infer_jurisdiction_code("Is this allowed or should I ask compliance?") is None

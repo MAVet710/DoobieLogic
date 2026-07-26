@@ -48,6 +48,33 @@ def test_compliance_instructions_forbid_model_memory_and_require_verification():
     assert "New York" in instructions
 
 
+def test_unverified_compliance_answer_uses_official_domain_web_search():
+    client = FakeClient()
+    service = ConversationService(client=client, provider="openai", model="test-model")
+    service.enhance(
+        {"answer": "Rules answer", "sources": [], "confidence": "low"},
+        question="What is the current purchase limit?",
+        mode="compliance",
+        state="MA",
+    )
+    call = client.responses.calls[0]
+    assert call["tools"][0]["type"] == "web_search"
+    assert "masscannabiscontrol.com" in call["tools"][0]["filters"]["allowed_domains"]
+    assert call["include"] == ["web_search_call.action.sources"]
+
+
+def test_verified_compliance_answer_does_not_spend_on_web_search():
+    client = FakeClient()
+    service = ConversationService(client=client, provider="openai", model="test-model")
+    service.enhance(
+        {"answer": "Verified answer", "rule_verified": True},
+        question="What is the current purchase limit?",
+        mode="compliance",
+        state="MA",
+    )
+    assert "tools" not in client.responses.calls[0]
+
+
 def test_rules_fallback_is_explicit_when_no_api_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     service = ConversationService(provider="auto")

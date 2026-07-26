@@ -4,8 +4,9 @@ import json
 import os
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
-from doobielogic.jurisdictions import compliance_context_text
+from doobielogic.jurisdictions import compliance_context_text, get_jurisdiction_context
 from doobielogic.module_curriculum import curriculum_prompt
 
 
@@ -55,16 +56,41 @@ def _bounded_json(value: Any) -> str:
     return text[:MAX_CONTEXT_CHARACTERS] + "...[truncated]"
 
 
+def _official_domains(state: str | None) -> list[str]:
+    context = get_jurisdiction_context(state)
+    domains: list[str] = []
+    for source in context.sources if context else ():
+        host = (urlparse(source.url).hostname or "").lower()
+        if host and host not in domains:
+            domains.append(host)
+    return domains
+
+
+def _web_citation_sources(response: Any) -> list[str]:
+    sources: list[str] = []
+    for item in getattr(response, "output", None) or []:
+        for content in getattr(item, "content", None) or []:
+            for annotation in getattr(content, "annotations", None) or []:
+                url = str(getattr(annotation, "url", "") or "").strip()
+                title = str(getattr(annotation, "title", "") or "").strip()
+                rendered = f"{title}: {url}" if title else url
+                if rendered and rendered not in sources:
+                    sources.append(rendered)
+    return sources
+
+
 def build_conversation_instructions(mode: str, state: str | None = None) -> str:
     compliance_policy = ""
     if mode == "compliance":
         compliance_policy = (
             "\n\nCOMPLIANCE EVIDENCE POLICY\n"
             f"{compliance_context_text(state)}\n"
-            "Only make jurisdiction-specific claims that are explicitly supported by the supplied "
-            "official-source context. Never fill a missing current rule from model memory. When the "
-            "exact rule text is absent, say what is unknown, link the official authority, and require "
-            "regulator or qualified-counsel verification."
+            "For a current jurisdiction-specific rule not already verified in the application context, "
+            "use web search and rely only on the allowed official regulator or government domains. "
+            "Never fill a missing current rule from model memory or a secondary source. State the "
+            "effective date when available, link the controlling official authority, clearly distinguish "
+            "purchase limits from possession limits, and require regulator or qualified-counsel "
+            "verification before a licensee changes operations."
         )
     return (
         "You are DoobieLogic, a cannabis-business AI assistant. Give a direct, useful answer first. "
@@ -170,15 +196,36 @@ class ConversationService:
             }
         )
         try:
+            request_options: dict[str, Any] = {
+                "model": self.model,
+                "instructions": build_conversation_instructions(mode, state),
+                "input": conversation,
+                "max_output_tokens": 1_800,
+            }
+            if mode == "compliance" and not enhanced.get("rule_verified"):
+                domains = _official_domains(state)
+                if domains:
+                    request_options.update(
+                        {
+                            "tools": [
+                                {
+                                    "type": "web_search",
+                                    "filters": {"allowed_domains": domains},
+                                }
+                            ],
+                            "tool_choice": "auto",
+                            "include": ["web_search_call.action.sources"],
+                        }
+                    )
             response = self.client.responses.create(
-                model=self.model,
-                instructions=build_conversation_instructions(mode, state),
-                input=conversation,
-                max_output_tokens=1_800,
+                **request_options
             )
             output_text = str(getattr(response, "output_text", "") or "").strip()
             if output_text:
                 enhanced["answer"] = output_text
+                citations = _web_citation_sources(response)
+                if citations:
+                    enhanced["sources"] = list(dict.fromkeys([*(enhanced.get("sources") or []), *citations]))
                 enhanced["ai"] = self.status.to_dict()
                 return enhanced
             enhanced["ai"] = ConversationStatus(

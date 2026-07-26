@@ -9,11 +9,17 @@ from pydantic import BaseModel, Field
 
 from doobielogic.copilot import DoobieCopilot
 from doobielogic.config import load_doobie_config
+from doobielogic.compliance_answers import answer_verified_compliance_question
 from doobielogic.conversational_ai import ConversationService
 from doobielogic.evals import apply_low_confidence_fallback
 from doobielogic.intelligence_v3 import build_intel_v3
 from doobielogic.intelligence_router import infer_intelligence_route
-from doobielogic.jurisdictions import JURISDICTION_NAMES, get_jurisdiction_context
+from doobielogic.jurisdictions import (
+    JURISDICTION_NAMES,
+    compliance_clarification_result,
+    get_jurisdiction_context,
+    infer_jurisdiction_code,
+)
 from doobielogic.module_curriculum import MODULE_CURRICULA
 from doobielogic.admin_auth import load_admin_auth_config, verify_admin_credentials
 from doobielogic.key_management import KEY_ROLE_ADMIN, KEY_ROLE_SERVICE, KeyStore
@@ -434,6 +440,10 @@ def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None
         mode = route.mode
         routed_by = route.reason
 
+    inferred_state = req.state or infer_jurisdiction_code(question)
+    if inferred_state:
+        req.state = inferred_state
+
     if mode in {"buyer", "inventory"}:
         resp = COPILOT.ask_with_buyer_brain(question, mapped_data=req.data, persona="buyer", state=req.state)
         return _support_response(resp, mode=mode, state=req.state, routed_by=routed_by, request=req)
@@ -454,6 +464,22 @@ def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None
         )
         return _support_response(resp, mode=mode, state=req.state, routed_by=routed_by, request=req)
     if mode == "compliance":
+        if not req.state:
+            clarification = compliance_clarification_result()
+            clarification["routed_by"] = routed_by
+            clarification["ai"] = CONVERSATION.status.to_dict()
+            return clarification
+        verified = answer_verified_compliance_question(question, req.state)
+        if verified:
+            verified["routed_by"] = routed_by
+            return CONVERSATION.enhance(
+                verified,
+                question=question,
+                mode="compliance",
+                state=req.state,
+                data=req.data,
+                history=req.history,
+            )
         resp = COPILOT.ask_with_operations(
             question,
             department="compliance",
