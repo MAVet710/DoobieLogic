@@ -70,6 +70,8 @@ def test_instructions_forbid_expanding_source_summaries_into_law():
     assert "proves only the facts explicitly written" in instructions
     assert "never expand it into unstated mandated warnings" in instructions
     assert "rule_verified=true" in instructions
+    assert "required in every state" in instructions
+    assert "compliance boundary must agree with every earlier table cell" in instructions
 
 
 def test_unverified_compliance_answer_uses_official_domain_web_search():
