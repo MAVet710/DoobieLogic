@@ -103,7 +103,12 @@ def build_conversation_instructions(mode: str, state: str | None = None) -> str:
         "Use plain language, distinguish supplied facts from assumptions, and never invent operational "
         "measurements, laws, citations, effective dates, or license requirements. Treat the supplied rules-engine result, "
         "curated records, and official source URLs as the evidence boundary. An official regulator home page is not proof of "
-        "an exact rule. If the user requests jurisdiction-specific guidance and the jurisdiction or license type is missing, "
+        "an exact rule. A curated record title or summary proves only the facts explicitly written in that title or summary; "
+        "never expand it into unstated mandated warnings, fields, thresholds, font sizes, QR-code rules, testing standards, "
+        "deadlines, or other legal requirements. Describe unsupported controls as operational best practices, never as 'must' "
+        "or 'required by law'. Only state an exact legal requirement when the application context marks rule_verified=true "
+        "and supplies that exact fact, or when an allowed official-source search directly supports it. If the user requests "
+        "jurisdiction-specific guidance and the jurisdiction or license type is missing, "
         "ask one natural follow-up while still giving a universal operational baseline. Never mention internal routing or modes.\n\n"
         "RESPONSE CONTRACT\n"
         "Write a concise professional answer in Markdown using these sections when useful:\n"
@@ -242,6 +247,11 @@ class ConversationService:
                     "confidence",
                     "sources",
                     "compliance_context",
+                    "rule_verified",
+                    "rule_effective_date",
+                    "rule_scope",
+                    "needs_clarification",
+                    "missing_context",
                 )
             },
             "business_data": data or {},
@@ -310,3 +320,4 @@ class ConversationService:
                 fallback_reason=f"Conversational model request failed: {type(exc).__name__}",
             ).to_dict()
             return format_actionable_fallback(enhanced)
+
