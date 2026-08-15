@@ -154,6 +154,44 @@ def test_common_operational_question_returns_actionable_playbook(monkeypatch):
     assert len(payload["recommendations"]) >= 3
 
 
+def test_packaging_question_from_ui_is_actionable_and_asks_for_context(monkeypatch):
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
+    res = client.post(
+        "/api/v1/support/copilot",
+        json={"question": "What packaging and labeling controls should I verify in my jurisdiction?"},
+    )
+    payload = res.json()
+    assert res.status_code == 200
+    assert payload["routed_mode"] == "packaging"
+    assert payload["needs_clarification"] is True
+    assert payload["missing_context"] == ["jurisdiction", "license_type"]
+    assert "Which U.S. state or territory and license type" in payload["answer"]
+    assert "Universal operating baseline" in payload["answer"]
+    assert len(payload["recommendations"]) >= 3
+    assert "Run shift-start label preflight" not in payload["answer"]
+
+
+def test_packaging_state_follow_up_restores_the_original_question(monkeypatch):
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
+    res = client.post(
+        "/api/v1/support/copilot",
+        json={
+            "question": "New York adult-use dispensary",
+            "history": [
+                {"role": "user", "content": "What packaging and labeling controls should I verify in my jurisdiction?"},
+                {"role": "assistant", "content": "Which U.S. state or territory and license type are you operating under?"},
+            ],
+        },
+    )
+    payload = res.json()
+    assert res.status_code == 200
+    assert payload["routed_mode"] == "packaging"
+    assert payload["compliance_context"]["code"] == "NY"
+    assert payload.get("needs_clarification") is not True
+    assert any("cannabis.ny.gov" in source for source in payload["sources"])
+    assert payload["routed_by"] == "Continued from your previous jurisdiction question"
+
+
 def test_laboratory_oos_question_returns_safe_actionable_playbook(monkeypatch):
     monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
     res = client.post(
@@ -288,6 +326,8 @@ def test_health_reports_postgres_shared(monkeypatch):
     assert payload['license_store_backend'] == 'postgres'
     assert payload['key_store_backend'] == 'postgres'
     assert payload['source_of_truth'] == 'postgres_shared'
+    assert payload['app_version'] == '2026.08-grounded-conversations'
+    assert payload['conversation_ready'] in {'true', 'false'}
 
 
 def test_health_warns_when_local_mode_active(monkeypatch):

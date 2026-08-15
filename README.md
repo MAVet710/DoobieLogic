@@ -73,14 +73,16 @@ deployment, set `DOOBIE_REQUIRE_LOGIN=true` and a one-time
 that, administrators create users, reset passwords, activate/deactivate
 accounts, and define roles inside the app. Passwords are bcrypt hashes.
 
-For natural multi-turn model answers, configure:
+For natural multi-turn model answers on Groq's free developer tier, configure:
 
-- `DOOBIE_AI_PROVIDER=openai`
-- `OPENAI_API_KEY=<secret>`
-- `DOOBIE_OPENAI_MODEL=gpt-5.6`
+- `DOOBIE_AI_PROVIDER=groq`
+- `GROQ_API_KEY=<secret>`
+- `DOOBIE_GROQ_MODEL=openai/gpt-oss-120b`
 
 Without a model key, DoobieLogic remains operational using deterministic
-analytics and source grounding and reports the fallback in answer details.
+analytics, actionable playbooks, and source grounding. It reports the fallback
+in answer details instead of pretending a model answered. OpenAI remains an
+optional paid alternative through `DOOBIE_AI_PROVIDER=openai`.
 
 ## API run
 
@@ -149,7 +151,7 @@ DoobieLogic applies a mode-specific response style through `doobielogic/response
 - **compliance**: conservative framing, traceability, recurrence, verification.
 - **executive**: concise summary, cross-functional issues, decision-ready next actions.
 
-Confidence is inferred from structured data coverage, source grounding, and relevant operational/compliance rules—not hardcoded.
+Confidence is inferred from structured data coverage, source grounding, and relevant operational/compliance rulesâ€”not hardcoded.
 
 ### Compliance coverage and evidence policy
 
@@ -220,7 +222,7 @@ See full documentation in `docs/licensing.md`.
   - `DATABASE_URL` (or `DOOBIE_DATABASE_URL` / `POSTGRES_URL`) for persistent shared Postgres storage
   - `DOOBIE_BACKEND_MODE=postgres` (recommended for production clarity; local mode is dev-only)
   - `DOOBIE_STRICT_CONFIG=true`
-  - `DOOBIE_AI_PROVIDER=openai` and `OPENAI_API_KEY` for conversational answers
+  - `DOOBIE_AI_PROVIDER=groq`, `GROQ_API_KEY`, and `DOOBIE_GROQ_MODEL=openai/gpt-oss-120b` for free-tier conversational answers
 - Optional admin key:
   - `ADMIN_API_KEY` (for admin endpoints only)
 - Health probe:

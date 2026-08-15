@@ -59,7 +59,7 @@ def answer_operational_question(question: str, mode: str) -> dict[str, Any] | No
             ),
             recommendations=[
                 "Use short role-play sessions built from approved product information and prohibited-claims examples.",
-                "Track attach rate with returns, complaints, discounting, and mystery-shop quality—not sales alone.",
+                "Track attach rate with returns, complaints, discounting, and mystery-shop qualityâ€”not sales alone.",
                 "Have compliance approve the language guide for the applicable jurisdiction.",
             ],
             risks=["Unapproved health or therapeutic claims can create regulatory and consumer-safety exposure."],
@@ -164,6 +164,25 @@ def answer_operational_question(question: str, mode: str) -> dict[str, Any] | No
             risks=["Do not prescribe pesticide, nutrient, or remediation changes without label, SOP, and jurisdiction review."],
         )
 
+    if mode == "cultivation" and any(term in q for term in ("powdery mildew", "botrytis", "pest", "disease", "humidity")):
+        return _result(
+            mode="cultivation",
+            answer=(
+                "Contain the affected room today: restrict traffic and tool movement, flag and map symptomatic plants, "
+                "protect unaffected rooms, and place potentially affected harvest material on quality hold. Verify the "
+                "humidity excursion and leaf-surface conditions with calibrated sensors before changing the controlled process."
+            ),
+            recommendations=[
+                "Map symptoms by room, bench, cultivar, plant stage, irrigation zone, and time; photograph and preserve scouting records.",
+                "Review 24-hour temperature, relative humidity, dew-point or VPD trends, airflow, irrigation timing, leaks, sanitation, and recent room entries.",
+                "Use only the facility IPM plan and products legally approved for the crop, site, growth stage, license, and jurisdiction.",
+                "Escalate to cultivation, QA, and compliance owners to decide sampling, harvest hold, disposition, reporting, and CAPA.",
+            ],
+            risks=[
+                "Do not apply an unapproved pesticide or conceal, trim around, remediate, or release affected material outside approved procedures."
+            ],
+        )
+
     if mode == "extraction" and any(term in q for term in ("yield", "hydrocarbon", "recovery", "residual solvent", "test failure")):
         residual = "residual" in q or "test failure" in q
         if residual:
@@ -217,7 +236,7 @@ def answer_operational_question(question: str, mode: str) -> dict[str, Any] | No
             mode="kitchen",
             answer=(
                 "Build the schedule backward from the required ship date and treat testing, QA disposition, "
-                "label approval, and packaging capacity as release gates—not assumptions."
+                "label approval, and packaging capacity as release gatesâ€”not assumptions."
             ),
             recommendations=[
                 "Use actual median and 90th-percentile lab turnaround, QA review, and packaging lead times.",
@@ -266,7 +285,7 @@ def answer_operational_question(question: str, mode: str) -> dict[str, Any] | No
             recommendations=[
                 "Compare this month with the prior month and same month last year at category, vendor, brand, and location level.",
                 "Quantify the point impact of each driver and assign owners to the top two controllable causes.",
-                "Check whether discount-driven volume improved gross profit dollars, inventory turns, and cash—not margin rate alone.",
+                "Check whether discount-driven volume improved gross profit dollars, inventory turns, and cashâ€”not margin rate alone.",
             ],
         )
 
@@ -307,7 +326,7 @@ def answer_operational_question(question: str, mode: str) -> dict[str, Any] | No
             answer=(
                 "Map the work from released input to released output and measure queue time, touch time, first-pass "
                 "yield, downtime, changeover, staffing, and work-in-process at each step. The constraint is the step "
-                "whose sustainable capacity and availability limit total flow—not necessarily the busiest station."
+                "whose sustainable capacity and availability limit total flowâ€”not necessarily the busiest station."
             ),
             recommendations=[
                 "Timestamp arrivals, starts, completions, holds, rework, and handoffs for a representative production window.",
@@ -364,6 +383,21 @@ def answer_operational_question(question: str, mode: str) -> dict[str, Any] | No
         )
 
     if mode == "distribution" and any(term in q for term in ("manifest", "delivery", "shipment", "wholesale", "otif")):
+        if "manifest" in q and any(term in q for term in ("mismatch", "does not match", "doesn't match", "incorrect", "wrong")):
+            return _result(
+                mode="distribution",
+                answer=(
+                    "Do not continue the transfer as though the records match. Stop at the safest authorized location, "
+                    "maintain custody and security, preserve the original manifest and traceability audit trail, and have "
+                    "an authorized employee resolve the physical-versus-system discrepancy under the jurisdiction's current procedure."
+                ),
+                recommendations=[
+                    "Count and identify every physical package without altering identifiers, then compare package ID, quantity, lot, origin, destination, vehicle, personnel, and timestamps.",
+                    "Contact the dispatch, receiving, compliance, and traceability owners through approved channels and record instructions and times.",
+                    "Correct, void, return, or regenerate records only through an authorized workflow; document custody, root cause, and final reconciliation.",
+                ],
+                risks=["Do not edit records to fit the load, make an unauthorized stop, deliver mismatched product, or break chain of custody."],
+            )
         return _result(
             mode="distribution",
             answer=(
@@ -425,6 +459,24 @@ def answer_operational_question(question: str, mode: str) -> dict[str, Any] | No
                 "Stress-test slower collections, inventory commitments, taxes, and minimum operating cash before approving discretionary spend.",
             ],
             risks=["Cannabis tax, banking, cash-handling, and insolvency decisions require qualified accounting and legal review."],
+        )
+
+    if mode == "finance" and any(term in q for term in ("cash is tight", "cash is low", "cash runway", "liquidity")):
+        return _result(
+            mode="finance",
+            answer=(
+                "Protect the next 13 weeks of payroll, tax, rent, debt, required compliance, and continuity-critical cash first. "
+                "Freeze speculative buys, reduce or cancel uncommitted inbound inventory, accelerate collectible receivables, "
+                "and create a controlled plan for aging stock that measures cash recovered after discount and disposition cost."
+            ),
+            recommendations=[
+                "Reconcile bank cash today and build a weekly base, downside, and severe-downside forecast with an owner and confidence for every receipt and payment.",
+                "Rank aged inventory by cash tied up, sell-through, package age, shelf-life or disposition window, margin after action, and open purchase commitments.",
+                "Approve purchasing against a cash cap and minimum operating reserve; protect proven velocity and required assortment before long-tail inventory.",
+                "Assign collection actions to every overdue receivable and negotiate payment timing or split deliveries before creating a critical default.",
+            ],
+            confidence="low",
+            risks=["Tax, insolvency, banking, promotion, transfer, return, and destruction decisions require current accounting, legal, and jurisdiction review."],
         )
 
     if mode == "people" and any(term in q for term in ("onboarding", "training", "new hire", "hiring")):

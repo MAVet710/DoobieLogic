@@ -6,12 +6,16 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
+from doobielogic.actionable_response import format_actionable_fallback
+from doobielogic.conversation_context import build_conversation_profile
 from doobielogic.jurisdictions import compliance_context_text, get_jurisdiction_context
 from doobielogic.module_curriculum import curriculum_prompt
 from doobielogic.professional_domains import professional_domain_prompt
+from doobielogic.retrieval import build_retrieval_context
 
 
-DEFAULT_MODEL = "gpt-5.6"
+DEFAULT_OPENAI_MODEL = "gpt-5.6"
+DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
 MAX_HISTORY_MESSAGES = 12
 MAX_CONTEXT_CHARACTERS = 30_000
 
@@ -95,11 +99,20 @@ def build_conversation_instructions(mode: str, state: str | None = None) -> str:
             "verification before a licensee changes operations."
         )
     return (
-        "You are DoobieLogic, a cannabis-business AI assistant. Give a direct, useful answer first. "
+        "You are DoobieLogic, a conversational AI for licensed cannabis professionals. Give the exact, useful answer first. "
         "Use plain language, distinguish supplied facts from assumptions, and never invent operational "
-        "measurements, laws, citations, or license requirements. Treat the supplied rules-engine result "
-        "and source URLs as the evidence boundary. Ask for the minimum missing information when a "
-        "responsible recommendation needs more evidence.\n\n"
+        "measurements, laws, citations, effective dates, or license requirements. Treat the supplied rules-engine result, "
+        "curated records, and official source URLs as the evidence boundary. An official regulator home page is not proof of "
+        "an exact rule. If the user requests jurisdiction-specific guidance and the jurisdiction or license type is missing, "
+        "ask one natural follow-up while still giving a universal operational baseline. Never mention internal routing or modes.\n\n"
+        "RESPONSE CONTRACT\n"
+        "Write a concise professional answer in Markdown using these sections when useful:\n"
+        "- Direct answer\n"
+        "- What to do now (numbered, observable actions)\n"
+        "- Evidence to verify (specific records, fields, or measurements)\n"
+        "- Compliance boundary (what is verified, what is not, and what requires official confirmation)\n"
+        "For control, investigation, audit, or checklist questions, give at least five concrete checks. "
+        "Do not bury the actions behind a generic summary. Do not repeat the same point in multiple sections.\n\n"
         f"{specialist_prompt}"
         f"{compliance_policy}"
     )
@@ -117,39 +130,58 @@ class ConversationService:
         api_key: str | None = None,
     ):
         requested = str(provider or os.environ.get("DOOBIE_AI_PROVIDER", "auto")).strip().casefold()
-        self.model = str(model or os.environ.get("DOOBIE_OPENAI_MODEL", DEFAULT_MODEL)).strip()
         self.client = client
         self.provider = "rules"
+        self.model: str | None = None
         self.fallback_reason: str | None = None
 
         if requested in {"rules", "deterministic", "off", "disabled"}:
             self.fallback_reason = "Conversational model disabled by configuration."
             return
-        if requested not in {"auto", "openai"}:
+        if requested not in {"auto", "openai", "groq"}:
             self.fallback_reason = f"Unsupported AI provider '{requested}'."
             return
         if self.client is not None:
-            self.provider = "openai"
+            self.provider = requested if requested in {"openai", "groq"} else "openai"
+            default_model = DEFAULT_GROQ_MODEL if self.provider == "groq" else DEFAULT_OPENAI_MODEL
+            env_model = "DOOBIE_GROQ_MODEL" if self.provider == "groq" else "DOOBIE_OPENAI_MODEL"
+            self.model = str(model or os.environ.get(env_model, default_model)).strip()
             return
 
-        configured_key = str(api_key or os.environ.get("OPENAI_API_KEY", "")).strip()
+        groq_key = str(api_key or os.environ.get("GROQ_API_KEY", "")).strip() if requested == "groq" else str(os.environ.get("GROQ_API_KEY", "")).strip()
+        openai_key = str(api_key or os.environ.get("OPENAI_API_KEY", "")).strip() if requested == "openai" else str(os.environ.get("OPENAI_API_KEY", "")).strip()
+        selected = requested
+        if requested == "auto":
+            selected = "groq" if groq_key else ("openai" if openai_key else "rules")
+        configured_key = groq_key if selected == "groq" else openai_key
         if not configured_key:
-            self.fallback_reason = "OPENAI_API_KEY is not configured."
+            self.fallback_reason = "No conversational provider key is configured (GROQ_API_KEY or OPENAI_API_KEY)."
             return
         try:
             from openai import OpenAI
 
-            self.client = OpenAI(api_key=configured_key, timeout=45.0, max_retries=2)
-            self.provider = "openai"
+            if selected == "groq":
+                self.client = OpenAI(
+                    api_key=configured_key,
+                    base_url="https://api.groq.com/openai/v1",
+                    timeout=45.0,
+                    max_retries=2,
+                )
+                self.provider = "groq"
+                self.model = str(model or os.environ.get("DOOBIE_GROQ_MODEL", DEFAULT_GROQ_MODEL)).strip()
+            else:
+                self.client = OpenAI(api_key=configured_key, timeout=45.0, max_retries=2)
+                self.provider = "openai"
+                self.model = str(model or os.environ.get("DOOBIE_OPENAI_MODEL", DEFAULT_OPENAI_MODEL)).strip()
         except (ImportError, TypeError) as exc:
-            self.fallback_reason = f"OpenAI client unavailable: {exc}"
+            self.fallback_reason = f"Conversational client unavailable: {exc}"
 
     @property
     def status(self) -> ConversationStatus:
         return ConversationStatus(
             provider=self.provider,
-            model=self.model if self.provider == "openai" else None,
-            enabled=self.provider == "openai" and self.client is not None,
+            model=self.model if self.provider in {"openai", "groq"} else None,
+            enabled=self.provider in {"openai", "groq"} and self.client is not None,
             fallback_reason=self.fallback_reason,
         )
 
@@ -164,13 +196,41 @@ class ConversationService:
         history: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         enhanced = dict(result)
+        profile = build_conversation_profile(
+            question,
+            state=state,
+            primary_mode=mode,
+            history=history,
+        )
+        resolved_state = str(profile.get("jurisdiction") or "").strip() or None
+        retrieval = build_retrieval_context(
+            question,
+            state=resolved_state,
+            primary_mode=mode,
+            secondary_modes=list(profile.get("secondary_domains") or []),
+        )
+        current_sources = [
+            str(source)
+            for source in (enhanced.get("sources") or [])
+            if str(source).startswith("http")
+        ]
+        enhanced["sources"] = list(dict.fromkeys([*current_sources, *retrieval["source_urls"]]))
+        enhanced["conversation_context"] = profile
+        enhanced["retrieval"] = {
+            "status": retrieval["status"],
+            "verified_rule_available": retrieval["verified_rule_available"],
+            "warning": retrieval["warning"],
+        }
+        if resolved_state and not enhanced.get("compliance_context"):
+            enhanced["compliance_context"] = retrieval.get("jurisdiction")
         if not self.status.enabled:
             enhanced["ai"] = self.status.to_dict()
-            return enhanced
+            return format_actionable_fallback(enhanced)
 
         model_context = {
-            "jurisdiction": state,
+            "conversation_profile": profile,
             "routed_module": mode,
+            "retrieval_context": retrieval,
             "rules_engine_result": {
                 key: enhanced.get(key)
                 for key in (
@@ -198,37 +258,42 @@ class ConversationService:
             }
         )
         try:
-            request_options: dict[str, Any] = {
-                "model": self.model,
-                "instructions": build_conversation_instructions(mode, state),
-                "input": conversation,
-                "max_output_tokens": 1_800,
-            }
-            if mode == "compliance" and not enhanced.get("rule_verified"):
-                domains = _official_domains(state)
-                if domains:
-                    request_options.update(
-                        {
-                            "tools": [
-                                {
-                                    "type": "web_search",
-                                    "filters": {"allowed_domains": domains},
-                                }
-                            ],
-                            "tool_choice": "auto",
-                            "include": ["web_search_call.action.sources"],
-                        }
-                    )
-            response = self.client.responses.create(
-                **request_options
-            )
-            output_text = str(getattr(response, "output_text", "") or "").strip()
+            instructions = build_conversation_instructions(mode, resolved_state)
+            if self.provider == "groq":
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "system", "content": instructions}, *conversation],
+                    temperature=0.2,
+                    max_tokens=1_800,
+                )
+                choices = getattr(response, "choices", None) or []
+                output_text = str(getattr(getattr(choices[0], "message", None), "content", "") or "").strip() if choices else ""
+            else:
+                request_options: dict[str, Any] = {
+                    "model": self.model,
+                    "instructions": instructions,
+                    "input": conversation,
+                    "max_output_tokens": 1_800,
+                }
+                if mode == "compliance" and not enhanced.get("rule_verified"):
+                    domains = _official_domains(resolved_state)
+                    if domains:
+                        request_options.update(
+                            {
+                                "tools": [{"type": "web_search", "filters": {"allowed_domains": domains}}],
+                                "tool_choice": "auto",
+                                "include": ["web_search_call.action.sources"],
+                            }
+                        )
+                response = self.client.responses.create(**request_options)
+                output_text = str(getattr(response, "output_text", "") or "").strip()
             if output_text:
                 enhanced["answer"] = output_text
-                citations = _web_citation_sources(response)
+                citations = _web_citation_sources(response) if self.provider == "openai" else []
                 if citations:
                     enhanced["sources"] = list(dict.fromkeys([*(enhanced.get("sources") or []), *citations]))
                 enhanced["ai"] = self.status.to_dict()
+                enhanced["response_contract_version"] = "actionable-v1"
                 return enhanced
             enhanced["ai"] = ConversationStatus(
                 provider="rules",
@@ -236,7 +301,7 @@ class ConversationService:
                 enabled=False,
                 fallback_reason="The conversational model returned no text.",
             ).to_dict()
-            return enhanced
+            return format_actionable_fallback(enhanced)
         except Exception as exc:
             enhanced["ai"] = ConversationStatus(
                 provider="rules",
@@ -244,4 +309,4 @@ class ConversationService:
                 enabled=False,
                 fallback_reason=f"Conversational model request failed: {type(exc).__name__}",
             ).to_dict()
-            return enhanced
+            return format_actionable_fallback(enhanced)

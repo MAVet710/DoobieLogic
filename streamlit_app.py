@@ -9,14 +9,19 @@ from typing import Any
 import streamlit as st
 
 from doobielogic.admin_auth import AdminAuthConfig, load_admin_auth_config
+from doobielogic.build_info import build_info
 from doobielogic.buyer_brain import summarize_buyer_opportunities
 from doobielogic.config import load_doobie_config
 from doobielogic.compliance_answers import answer_verified_compliance_question, unverified_compliance_result
 from doobielogic.conversational_ai import ConversationService
+from doobielogic.conversation_context import (
+    infer_state_from_history,
+    jurisdiction_clarification_result,
+    requires_jurisdiction,
+)
 from doobielogic.copilot import DoobieCopilot
 from doobielogic.intelligence_router import IntelligenceRoute, infer_intelligence_route
 from doobielogic.jurisdictions import (
-    compliance_clarification_result,
     get_jurisdiction_context,
     infer_jurisdiction_code,
 )
@@ -270,8 +275,8 @@ def _clear_file() -> None:
 
 
 def _render_sidebar(store: UserStore, permissions: set[str]) -> None:
-    st.sidebar.markdown("<div class='dl-brand'>🌿 <strong>DoobieLogic</strong></div>", unsafe_allow_html=True)
-    if st.sidebar.button("＋ New chat", use_container_width=True):
+    st.sidebar.markdown("<div class='dl-brand'>ðŸŒ¿ <strong>DoobieLogic</strong></div>", unsafe_allow_html=True)
+    if st.sidebar.button("ï¼‹ New chat", use_container_width=True):
         st.session_state.chat_history = []
         st.session_state.workspace = "chat"
         st.rerun()
@@ -299,6 +304,12 @@ def _render_sidebar(store: UserStore, permissions: set[str]) -> None:
     st.sidebar.markdown("---")
     identity = st.session_state.get("auth_display_name") or "Guest"
     st.sidebar.caption(identity)
+    release = build_info()
+    conversation = get_conversation_service().status
+    st.sidebar.caption(
+        f"{release['app_version']} Â· {release['git_commit_short']} Â· "
+        f"{conversation.provider}{' ready' if conversation.enabled else ' fallback'}"
+    )
     if st.session_state.authenticated and st.sidebar.button("Log out", use_container_width=True):
         _clear_user_session()
         st.rerun()
@@ -312,17 +323,28 @@ def _run_copilot(
     copilot = get_copilot()
     data = st.session_state.mapped_data or {}
     resolved_prompt = prompt
-    if route.reason == "Continued the prior compliance question":
+    if route.reason.startswith("Continued the prior"):
         for message in reversed(history or []):
             if message.get("role") == "user" and str(message.get("content") or "").strip():
                 resolved_prompt = f"{message['content']}\nJurisdiction: {prompt}"
                 break
-    inferred_state = infer_jurisdiction_code(prompt)
+    inferred_state = infer_jurisdiction_code(prompt) or infer_state_from_history(history)
     if inferred_state:
         st.session_state.jurisdiction = inferred_state
     state = st.session_state.jurisdiction
-    if route.mode == "compliance" and not state:
-        return compliance_clarification_result(route.label)
+    playbook = answer_operational_question(resolved_prompt, route.mode)
+    if requires_jurisdiction(resolved_prompt, route.mode) and not state:
+        clarification = jurisdiction_clarification_result(resolved_prompt, route.label, playbook)
+        clarification["routed_mode"] = route.mode
+        clarification["routed_by"] = route.reason
+        return get_conversation_service().enhance(
+            clarification,
+            question=resolved_prompt,
+            mode=route.mode,
+            state=None,
+            data=data,
+            history=history,
+        )
     if route.mode == "compliance":
         verified = answer_verified_compliance_question(resolved_prompt, state)
         if verified:
@@ -334,7 +356,6 @@ def _run_copilot(
                 data=data,
                 history=history,
             )
-    playbook = answer_operational_question(resolved_prompt, route.mode)
     if playbook and route.mode != "compliance":
         playbook["route_label"] = route.label
         playbook["routed_by"] = route.reason
@@ -405,10 +426,10 @@ def _run_copilot(
 def _render_assistant_message(result: dict[str, Any]) -> None:
     st.markdown(result.get("answer") or "I could not produce an answer.")
     route_label = result.get("route_label")
-    if route_label:
-        st.caption(f"Automatically routed to {route_label} · {str(result.get('confidence', 'low')).title()} confidence")
 
     with st.expander("Sources, reasoning, and next actions"):
+        if route_label:
+            st.caption(f"Knowledge used: {route_label} Â· {str(result.get('confidence', 'low')).title()} confidence")
         ai = result.get("ai") or {}
         if ai.get("enabled"):
             st.caption(f"Conversation model: {ai.get('provider')} / {ai.get('model')}")
@@ -432,13 +453,16 @@ def _render_assistant_message(result: dict[str, Any]) -> None:
         if sources:
             st.markdown("#### Sources")
             for source in sources:
-                st.markdown(f"- {source}")
+                if str(source).startswith("http"):
+                    st.markdown(f"- [{source}]({source})")
+                else:
+                    st.markdown(f"- {source}")
         compliance = result.get("compliance_context")
         if compliance:
             st.markdown("#### Compliance grounding")
             st.write(
-                f"{compliance.get('jurisdiction')} · {compliance.get('scope_label')} · "
-                f"updated {compliance.get('last_updated')} · {compliance.get('review_status')}"
+                f"{compliance.get('jurisdiction')} Â· {compliance.get('scope_label')} Â· "
+                f"updated {compliance.get('last_updated')} Â· {compliance.get('review_status')}"
             )
 
 
@@ -446,7 +470,7 @@ def _render_empty_chat() -> None:
     st.markdown(
         """
         <div class="dl-welcome">
-            <div class="dl-welcome-mark">🌿</div>
+            <div class="dl-welcome-mark">ðŸŒ¿</div>
             <h1>How can I help your cannabis business?</h1>
             <p>Ask about retail, buying, inventory, cultivation, extraction, manufacturing,
             packaging, finance, operations, or state-specific compliance.</p>
@@ -493,12 +517,20 @@ def _render_chat(store: UserStore) -> None:
         user_role=st.session_state.get("auth_user_role"),
     )
     if (
-        route.mode != "compliance"
-        and len(st.session_state.chat_history) >= 2
+        len(st.session_state.chat_history) >= 2
         and (st.session_state.chat_history[-2].get("result") or {}).get("needs_clarification")
         and infer_jurisdiction_code(final_prompt)
     ):
-        route = IntelligenceRoute("compliance", "Compliance", "Continued the prior compliance question")
+        prior_question = next(
+            (
+                str(item.get("content") or "").strip()
+                for item in reversed(st.session_state.chat_history[:-1])
+                if item.get("role") == "user" and str(item.get("content") or "").strip()
+            ),
+            "",
+        )
+        prior_route = infer_intelligence_route(prior_question, data=st.session_state.mapped_data)
+        route = IntelligenceRoute(prior_route.mode, prior_route.label, "Continued the prior jurisdiction question")
     with st.spinner(f"Working across {route.label.lower()} knowledge..."):
         try:
             result = _run_copilot(
@@ -701,7 +733,7 @@ def main() -> None:
     started = perf_counter()
     st.set_page_config(
         page_title="DoobieLogic Cannabis AI",
-        page_icon="🌿",
+        page_icon="ðŸŒ¿",
         layout="wide",
         initial_sidebar_state="expanded",
     )
@@ -717,6 +749,14 @@ def main() -> None:
     except Exception:
         logger.exception("User store initialization failed")
         st.error("Secure user storage could not be initialized. Check the database configuration.")
+        st.stop()
+
+    diagnostics = config.diagnostics()
+    if diagnostics.get("production_like_env") and store.backend != "postgres":
+        st.error(
+            "Production account storage is not connected to Postgres. Sign-in data would be deployment-local and could "
+            "disappear on redeploy, so administrator setup is disabled until DOOBIE_DATABASE_URL is corrected."
+        )
         st.stop()
 
     auth_config = load_admin_auth_config(_safe_secrets(), os.environ)

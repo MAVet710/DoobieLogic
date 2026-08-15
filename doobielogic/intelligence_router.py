@@ -396,6 +396,17 @@ def infer_intelligence_route(
     """Choose a cannabis intelligence workflow without exposing a mode selector."""
 
     text = str(question or "").strip().casefold()
+    # Resolve common cross-functional incidents before the broad keyword pass.
+    # The primary workflow should own the immediate decision; secondary domains
+    # are added later by the conversation-context layer.
+    if any(term in text for term in ("customer complaint", "contamination", "released lot", "released product")):
+        return IntelligenceRoute("quality", _MODE_LABELS["quality"], "Detected from your question")
+    if any(term in text for term in ("powdery mildew", "botrytis", "pest pressure", "crop disease")):
+        return IntelligenceRoute("cultivation", _MODE_LABELS["cultivation"], "Detected from your question")
+    if any(term in text for term in ("cash is tight", "cash is low", "cash runway", "liquidity")):
+        return IntelligenceRoute("finance", _MODE_LABELS["finance"], "Detected from your question")
+    if any(term in text for term in ("gummy potency", "edible potency", "potency is uneven", "potency varies")):
+        return IntelligenceRoute("kitchen", _MODE_LABELS["kitchen"], "Detected from your question")
     for mode, keywords in _KEYWORDS:
         if any(_contains_keyword(text, keyword) for keyword in keywords):
             return IntelligenceRoute(mode, _MODE_LABELS[mode], "Detected from your question")
