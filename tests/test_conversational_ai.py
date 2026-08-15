@@ -65,6 +65,13 @@ def test_compliance_instructions_forbid_model_memory_and_require_verification():
     assert "New York" in instructions
 
 
+def test_instructions_forbid_expanding_source_summaries_into_law():
+    instructions = build_conversation_instructions("packaging", "NY")
+    assert "proves only the facts explicitly written" in instructions
+    assert "never expand it into unstated mandated warnings" in instructions
+    assert "rule_verified=true" in instructions
+
+
 def test_unverified_compliance_answer_uses_official_domain_web_search():
     client = FakeClient()
     service = ConversationService(client=client, provider="openai", model="test-model")
@@ -134,6 +141,7 @@ def test_groq_is_a_first_class_conversation_provider():
     assert call["messages"][0]["role"] == "system"
     assert "RESPONSE CONTRACT" in call["messages"][0]["content"]
     assert "https://cannabis.ny.gov/plma" in str(call["messages"])
+    assert "summary_only" in str(call["messages"])
     assert result["retrieval"]["status"] == "curated_evidence_match"
     assert all(source.startswith("http") for source in result["sources"])
 
@@ -155,3 +163,4 @@ def test_model_failure_preserves_rules_answer():
     assert result["answer"].startswith("Rules answer")
     assert result["ai"]["enabled"] is False
     assert "RuntimeError" in result["ai"]["fallback_reason"]
+
