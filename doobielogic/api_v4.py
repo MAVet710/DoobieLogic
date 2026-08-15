@@ -8,15 +8,20 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from doobielogic.copilot import DoobieCopilot
+from doobielogic.build_info import build_info
 from doobielogic.config import load_doobie_config
 from doobielogic.compliance_answers import answer_verified_compliance_question, unverified_compliance_result
 from doobielogic.conversational_ai import ConversationService
+from doobielogic.conversation_context import (
+    infer_state_from_history,
+    jurisdiction_clarification_result,
+    requires_jurisdiction,
+)
 from doobielogic.evals import apply_low_confidence_fallback
 from doobielogic.intelligence_v3 import build_intel_v3
 from doobielogic.intelligence_router import infer_intelligence_route
 from doobielogic.jurisdictions import (
     JURISDICTION_NAMES,
-    compliance_clarification_result,
     get_jurisdiction_context,
     infer_jurisdiction_code,
 )
@@ -299,6 +304,7 @@ def health() -> dict[str, str]:
     warnings = list(diagnostics["warnings"])
     if source_of_truth == "local_legacy" and diagnostics.get("production_like_env"):
         warnings.append("Keys and licenses are deployment-local and may not survive redeploys.")
+    release = build_info()
     return {
         "status": "ok",
         "service": "DoobieLogic API v4",
@@ -319,6 +325,10 @@ def health() -> dict[str, str]:
         "postgres_reachable": "true" if postgres_reachable else "false",
         "source_of_truth": source_of_truth,
         "warnings": ",".join(dict.fromkeys(warnings)) if warnings else "",
+        "app_version": release["app_version"],
+        "git_commit": release["git_commit"],
+        "git_commit_short": release["git_commit_short"],
+        "conversation_ready": "true" if CONVERSATION.status.enabled else "false",
     }
 
 
@@ -462,22 +472,43 @@ def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None
             ),
             "",
         )
-        if prior_user_question and infer_intelligence_route(prior_user_question, data=req.data).mode == "compliance":
+        prior_route = infer_intelligence_route(prior_user_question, data=req.data) if prior_user_question else None
+        if prior_route and requires_jurisdiction(prior_user_question, prior_route.mode):
             question = prior_user_question
             req.question = prior_user_question
             req.state = followup_state
-            mode = "compliance"
-            routed_by = "Continued from your previous compliance question"
+            mode = prior_route.mode
+            routed_by = (
+                "Continued from your previous compliance question"
+                if prior_route.mode == "compliance"
+                else "Continued from your previous jurisdiction question"
+            )
     if mode in {"", "auto", "automatic"}:
         route = infer_intelligence_route(question, data=req.data)
         mode = route.mode
         routed_by = route.reason
 
-    inferred_state = req.state or infer_jurisdiction_code(question)
+    inferred_state = req.state or infer_jurisdiction_code(question) or infer_state_from_history(req.history)
     if inferred_state:
         req.state = inferred_state
 
     playbook = answer_operational_question(question, mode)
+    if requires_jurisdiction(question, mode) and not req.state:
+        clarification = jurisdiction_clarification_result(
+            question,
+            mode.replace("_", " ").title(),
+            playbook,
+        )
+        clarification["routed_mode"] = mode
+        clarification["routed_by"] = routed_by
+        return CONVERSATION.enhance(
+            clarification,
+            question=question,
+            mode=mode,
+            state=None,
+            data=req.data,
+            history=req.history,
+        )
     if playbook and (mode != "compliance" or playbook.get("mode") != "compliance"):
         playbook["routed_by"] = routed_by
         playbook_mode = str(playbook.get("mode") or mode)
@@ -510,11 +541,6 @@ def support_copilot(req: SupportReq, x_api_key: str | None = Header(default=None
         )
         return _support_response(resp, mode=mode, state=req.state, routed_by=routed_by, request=req)
     if mode == "compliance":
-        if not req.state:
-            clarification = compliance_clarification_result()
-            clarification["routed_by"] = routed_by
-            clarification["ai"] = CONVERSATION.status.to_dict()
-            return clarification
         verified = answer_verified_compliance_question(question, req.state)
         if verified:
             verified["routed_by"] = routed_by

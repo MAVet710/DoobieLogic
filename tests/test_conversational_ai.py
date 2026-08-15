@@ -21,6 +21,23 @@ class FakeClient:
         self.responses = FakeResponses(output_text)
 
 
+class FakeGroqCompletions:
+    def __init__(self, output_text: str = "## Direct answer\nGrounded Groq answer"):
+        self.output_text = output_text
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=self.output_text))]
+        )
+
+
+class FakeGroqClient:
+    def __init__(self, output_text: str = "## Direct answer\nGrounded Groq answer"):
+        self.chat = SimpleNamespace(completions=FakeGroqCompletions(output_text))
+
+
 def test_curriculum_is_sent_as_real_model_instructions():
     client = FakeClient()
     service = ConversationService(client=client, provider="openai", model="test-model")
@@ -77,15 +94,48 @@ def test_verified_compliance_answer_does_not_spend_on_web_search():
 
 def test_rules_fallback_is_explicit_when_no_api_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
     service = ConversationService(provider="auto")
     result = service.enhance(
         {"answer": "Rules answer"},
         question="Help",
         mode="copilot",
     )
-    assert result["answer"] == "Rules answer"
+    assert result["answer"].startswith("Rules answer")
     assert result["ai"]["enabled"] is False
-    assert "OPENAI_API_KEY" in result["ai"]["fallback_reason"]
+    assert "GROQ_API_KEY" in result["ai"]["fallback_reason"]
+    assert "**To make this actionable**" in result["answer"]
+
+
+def test_groq_is_a_first_class_conversation_provider():
+    client = FakeGroqClient()
+    service = ConversationService(client=client, provider="groq", model="test-groq")
+    result = service.enhance(
+        {
+            "answer": "Rules answer",
+            "recommendations": ["Inspect approved artwork", "Reconcile labels"],
+            "sources": ["[module_curriculum:packaging]"],
+            "confidence": "medium",
+        },
+        question="What packaging controls should I verify in New York?",
+        mode="packaging",
+        state="NY",
+    )
+
+    assert result["answer"].startswith("## Direct answer")
+    assert result["ai"] == {
+        "provider": "groq",
+        "model": "test-groq",
+        "enabled": True,
+        "fallback_reason": None,
+    }
+    call = client.chat.completions.calls[0]
+    assert call["model"] == "test-groq"
+    assert call["messages"][0]["role"] == "system"
+    assert "RESPONSE CONTRACT" in call["messages"][0]["content"]
+    assert "https://cannabis.ny.gov/plma" in str(call["messages"])
+    assert result["retrieval"]["status"] == "curated_evidence_match"
+    assert all(source.startswith("http") for source in result["sources"])
 
 
 def test_model_failure_preserves_rules_answer():
@@ -102,6 +152,6 @@ def test_model_failure_preserves_rules_answer():
         question="Help",
         mode="ops",
     )
-    assert result["answer"] == "Rules answer"
+    assert result["answer"].startswith("Rules answer")
     assert result["ai"]["enabled"] is False
     assert "RuntimeError" in result["ai"]["fallback_reason"]
