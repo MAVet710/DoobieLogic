@@ -8,7 +8,7 @@ from doobielogic.sourcepack import match_sources
 
 
 def _record_view(record: dict[str, Any]) -> dict[str, Any]:
-    return {
+    view = {
         key: record.get(key)
         for key in (
             "record_id",
@@ -25,6 +25,8 @@ def _record_view(record: dict[str, Any]) -> dict[str, Any]:
         )
         if record.get(key) not in (None, "")
     }
+    view["evidence_scope"] = "summary_only"
+    return view
 
 
 def build_retrieval_context(
@@ -74,11 +76,18 @@ def build_retrieval_context(
 
     return {
         "status": status,
-        "verified_rule_available": bool(records),
+        "verified_rule_available": any(
+            bool(record.get("rule_verified")) and bool(record.get("verified_facts"))
+            for record in records
+        ),
         "warning": (
-            "Official registry links identify where to verify the rule but do not prove an exact current requirement."
-            if status == "official_registry_only"
-            else ""
+            "Curated record titles and summaries support only the facts explicitly written in them; they do not prove unstated rule details."
+            if status == "curated_evidence_match"
+            else (
+                "Official registry links identify where to verify the rule but do not prove an exact current requirement."
+                if status == "official_registry_only"
+                else ""
+            )
         ),
         "jurisdiction": jurisdiction.to_dict() if jurisdiction else None,
         "curated_records": [_record_view(record) for record in records],
@@ -86,3 +95,4 @@ def build_retrieval_context(
         "official_sources": official_sources,
         "source_urls": clean_urls,
     }
+
