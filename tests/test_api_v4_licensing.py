@@ -267,3 +267,35 @@ def test_service_endpoints_reject_admin_keys(monkeypatch, tmp_path):
     )
     assert res.status_code == 401
     assert "Invalid service API key" in res.json()["detail"]
+
+
+def test_deployed_service_auth_fails_closed_when_no_key_is_configured(monkeypatch, tmp_path):
+    monkeypatch.setattr("doobielogic.api_v4.API_KEY", "")
+    monkeypatch.setattr("doobielogic.api_v4.CONFIG", type("Cfg", (), {"production_like_env": True})())
+    monkeypatch.setattr("doobielogic.api_v4.KEY_STORE", KeyStore(path=tmp_path / "keys.db"))
+
+    res = client.get("/api/v1/auth/check")
+    assert res.status_code == 401
+    assert "Service authentication is required" in res.json()["detail"]
+
+
+def test_deployed_admin_bootstrap_requires_secret_token(monkeypatch, tmp_path):
+    monkeypatch.setattr("doobielogic.api_v4.ADMIN_API_KEY", "")
+    monkeypatch.setattr("doobielogic.api_v4.CONFIG", type("Cfg", (), {"production_like_env": True})())
+    monkeypatch.setattr("doobielogic.api_v4.KEY_STORE", KeyStore(path=tmp_path / "keys.db"))
+    monkeypatch.delenv("DOOBIE_ADMIN_BOOTSTRAP_TOKEN", raising=False)
+
+    disabled = client.post("/api/v1/admin/bootstrap/generate", json={"label": "Initial", "notes": ""})
+    assert disabled.status_code == 503
+
+    monkeypatch.setenv("DOOBIE_ADMIN_BOOTSTRAP_TOKEN", "deployment-bootstrap-secret")
+    missing = client.post("/api/v1/admin/bootstrap/generate", json={"label": "Initial", "notes": ""})
+    assert missing.status_code == 401
+
+    good = client.post(
+        "/api/v1/admin/bootstrap/generate",
+        headers={"x-bootstrap-token": "deployment-bootstrap-secret"},
+        json={"label": "Initial", "notes": ""},
+    )
+    assert good.status_code == 200
+    assert good.json()["raw_key"].startswith("DLB-ADM-")

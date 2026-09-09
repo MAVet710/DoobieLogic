@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from base64 import b64decode
+from secrets import compare_digest
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException
@@ -198,10 +199,15 @@ def require_service_auth(
     key = _resolve_service_key(x_api_key, authorization)
     safe_key = (key or "").strip()
 
-    if API_KEY and safe_key == API_KEY:
+    if API_KEY and compare_digest(safe_key, API_KEY):
         return
 
     if not API_KEY and not safe_key:
+        if CONFIG.production_like_env:
+            raise HTTPException(
+                status_code=401,
+                detail="Service authentication is required in deployed environments. Configure DOOBIE_API_KEY or issue a service key.",
+            )
         return
 
     if not safe_key:
@@ -237,7 +243,7 @@ def admin_auth(authorization: str | None) -> None:
         if verify_admin_credentials(username=username, password=password, config=auth_cfg):
             return
         raise HTTPException(status_code=401, detail="Unauthorized")
-    if ADMIN_API_KEY and token == ADMIN_API_KEY:
+    if ADMIN_API_KEY and compare_digest(token, ADMIN_API_KEY):
         return
     result = KEY_STORE.validate_admin_key(token)
     if not result.get("valid"):
@@ -631,11 +637,28 @@ def admin_bootstrap_status() -> dict[str, Any]:
 
 
 @app.post("/api/v1/admin/bootstrap/generate")
-def admin_bootstrap_generate(req: AdminBootstrapGenerateReq) -> dict[str, Any]:
+def admin_bootstrap_generate(
+    req: AdminBootstrapGenerateReq,
+    x_bootstrap_token: str | None = Header(default=None),
+) -> dict[str, Any]:
     if ADMIN_API_KEY:
         raise HTTPException(status_code=409, detail="Bootstrap disabled: ADMIN_API_KEY env is already configured")
     if KEY_STORE.has_active_admin_key():
         raise HTTPException(status_code=409, detail="Bootstrap disabled: an admin API key already exists")
+
+    bootstrap_token = str(os.environ.get("DOOBIE_ADMIN_BOOTSTRAP_TOKEN") or "").strip()
+    supplied_token = str(x_bootstrap_token or "").strip()
+    if CONFIG.production_like_env:
+        if not bootstrap_token:
+            raise HTTPException(
+                status_code=503,
+                detail="Admin bootstrap is disabled until DOOBIE_ADMIN_BOOTSTRAP_TOKEN is configured.",
+            )
+        if not supplied_token or not compare_digest(supplied_token, bootstrap_token):
+            raise HTTPException(status_code=401, detail="Unauthorized")
+    elif bootstrap_token and (not supplied_token or not compare_digest(supplied_token, bootstrap_token)):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
     generated = KEY_STORE.create_admin_api_key(label=req.label, notes=req.notes, is_bootstrap=True)
     return {"record_id": generated.record_id, "raw_key": generated.raw_key, "key_preview": generated.key_preview}
 
