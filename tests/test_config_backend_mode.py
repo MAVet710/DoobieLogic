@@ -91,3 +91,8 @@ def test_strict_mode_fails_in_production_like_env_without_database_url():
         assert "DOOBIE_DATABASE_URL" in str(exc)
     else:
         raise AssertionError("Expected strict config to fail without database URL in production-like env")
+
+
+def test_cloud_run_environment_is_production_like():
+    cfg = load_doobie_config({"K_SERVICE": "doobielogic-api"})
+    assert cfg.production_like_env is True

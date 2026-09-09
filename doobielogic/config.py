@@ -23,6 +23,14 @@ DOOBIE_CONFIG_KEYS: tuple[str, ...] = (
     "RENDER_SERVICE_NAME",
     "RENDER_EXTERNAL_URL",
     "RENDER_GIT_COMMIT",
+    "K_SERVICE",
+    "K_REVISION",
+    "K_CONFIGURATION",
+    "GOOGLE_CLOUD_PROJECT",
+    "FLY_APP_NAME",
+    "RAILWAY_ENVIRONMENT",
+    "DYNO",
+    "WEBSITE_SITE_NAME",
 )
 
 
@@ -37,7 +45,20 @@ def _is_production_like_env(source: Mapping[str, str]) -> bool:
         return True
     return any(
         bool((source.get(name) or "").strip())
-        for name in ("RENDER", "RENDER_SERVICE_NAME", "RENDER_EXTERNAL_URL", "RENDER_GIT_COMMIT")
+        for name in (
+            "RENDER",
+            "RENDER_SERVICE_NAME",
+            "RENDER_EXTERNAL_URL",
+            "RENDER_GIT_COMMIT",
+            "K_SERVICE",
+            "K_REVISION",
+            "K_CONFIGURATION",
+            "GOOGLE_CLOUD_PROJECT",
+            "FLY_APP_NAME",
+            "RAILWAY_ENVIRONMENT",
+            "DYNO",
+            "WEBSITE_SITE_NAME",
+        )
     )
 
 
