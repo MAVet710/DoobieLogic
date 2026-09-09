@@ -27,14 +27,13 @@ def test_admin_endpoints_require_admin_bearer(monkeypatch, tmp_path):
 def test_admin_endpoints_accept_basic_auth_with_configured_admin_user(monkeypatch, tmp_path):
     monkeypatch.setattr("doobielogic.api_v4.ADMIN_API_KEY", "")
     monkeypatch.setattr("doobielogic.api_v4.LICENSE_STORE", LicenseStore(path=tmp_path / "store.json"))
-    monkeypatch.setenv("DOOBIE_ADMIN_USERNAME", "God")
-    monkeypatch.setenv("DOOBIE_ADMIN_PASSWORD_HASH", "$2b$12$I9nkXct74SUatWQTBRqPcOZ8SQppWtwpZqAVoUukKPDw0/GnhaW6C")
+    monkeypatch.setenv("DOOBIE_ADMIN_USERNAME", "test-admin")
+    monkeypatch.setenv("DOOBIE_ADMIN_PASSWORD_HASH", "$2b$12$MoP2N.Y9hPY747f4sUnRNejdz.9wtfCFCbKc8W5Oe1xmrcHDx6KTi")
 
-    token = base64.b64encode(b"God:Major420").decode("utf-8")
+    token = base64.b64encode(b"test-admin:doobielogic-test-admin-2026").decode("utf-8")
     res = client.get("/api/v1/admin/customers", headers={"Authorization": f"Basic {token}"})
     assert res.status_code == 200
     assert res.json() == {"customers": []}
-
 
 def test_end_to_end_admin_and_validation_flow(monkeypatch, tmp_path):
     monkeypatch.setattr("doobielogic.api_v4.ADMIN_API_KEY", "admin-secret")
